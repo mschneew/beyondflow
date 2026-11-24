@@ -1,0 +1,50 @@
+- route:
+    id: sf-contacts-to-crm
+    description: "Salesforce Contact -> BeyondCRM Contact"
+    from:
+      uri: timer:sf-contacts-to-crm
+      parameters:
+        period: "300000"
+        delay: "45000"
+      steps:
+        - to:
+            uri: kamelet:salesforce-query
+            parameters:
+              soql: "SELECT Id, FirstName, LastName, Title, Email, Phone, MobilePhone, AccountId FROM Contact ORDER BY SystemModstamp DESC LIMIT 200"
+        - split:
+            jq:
+              expression: .records
+            steps:
+              - setHeader:
+                  name: bfLabel
+                  jq:
+                    expression: '((.FirstName // "") + " " + .LastName)'
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping Salesforce Contact -> CRM Contact (S_CONTACT)"
+                  jq:
+                    expression: |-
+                      {
+                        "_EXT_ID": .Id,
+                        "FST_NAME": .FirstName,
+                        "LAST_NAME": .LastName,
+                        "JOB_TITLE": .Title,
+                        "EMAIL_ADDR": .Email,
+                        "WORK_PH_NUM": .Phone,
+                        "CELL_PH_NUM": .MobilePhone,
+                        "_LOOKUP:S_ORG_EXT:PR_DEPT_OU_ID": .AccountId
+                      }
+              - convertBodyTo:
+                  type: java.lang.String
+              - setHeader:
+                  name: bfEntity
+                  constant: Contact
+              - to:
+                  uri: "sql-stored:siebel.cx_bf_sfdc.sync_in(VARCHAR ${header.bfEntity},VARCHAR ${body},OUT VARCHAR crmRowId,OUT VARCHAR crmAction)"
+                  parameters:
+                    dataSource: "#crmdb"
+              - filter:
+                  simple: "${body[crmAction]} != 'UNVERAENDERT'"
+                  steps:
+                    - log:
+                        message: "Salesforce-Kontakt ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]}"

@@ -1,0 +1,80 @@
+- route:
+    id: sf-opportunities-to-crm
+    description: "Gewonnene Salesforce-Opportunity -> BeyondCRM Auftrag -> SAP (Sicherheitsnetz alle 15 Min.; sofort per Ereignis aus sf-opportunity-events)"
+    from:
+      uri: timer:sf-opportunities-to-crm
+      parameters:
+        period: "900000"
+        delay: "100000"
+      steps:
+        - to:
+            uri: seda:sf-opp-sync
+- route:
+    id: sf-opportunities-sync
+    description: "Abgleich gewonnener Opportunities (seriell, ausgeloest durch Timer oder Ereignis)"
+    from:
+      uri: seda:sf-opp-sync
+      parameters:
+        concurrentConsumers: "1"
+      steps:
+        - to:
+            uri: kamelet:salesforce-query
+            parameters:
+              soql: "SELECT Id, Name, AccountId, CloseDate, Amount, (SELECT Quantity, UnitPrice, Product2.ProductCode FROM OpportunityLineItems) FROM Opportunity WHERE IsWon = true AND BeyondCRM_Auftrag__c = null ORDER BY CloseDate DESC LIMIT 20"
+        - split:
+            jq:
+              expression: .records
+            steps:
+              - setProperty:
+                  name: oppId
+                  jq:
+                    expression: .Id
+                    resultType: java.lang.String
+              - setProperty:
+                  name: label
+                  jq:
+                    expression: .Name
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping Salesforce Opportunity -> CRM Auftrag (S_ORDER)"
+                  jq:
+                    expression: |-
+                      {
+                        "_EXT_ID": .Id,
+                        "ACCOUNT_EXT_ID": .AccountId,
+                        "ORDER_DT": .CloseDate,
+                        "ORDER_AMT": .Amount,
+                        "ITEMS": [(.OpportunityLineItems.records // [])[] | {"PART_NUM": .Product2.ProductCode, "QTY_REQ": .Quantity, "NET_PRI": .UnitPrice}]
+                      }
+              - convertBodyTo:
+                  type: java.lang.String
+              - to:
+                  uri: "sql-stored:siebel.cx_bf_sfdc.create_order(VARCHAR ${body},OUT VARCHAR result)"
+                  parameters:
+                    dataSource: "#crmdb"
+              - setBody:
+                  simple: "${body[result]}"
+              - choice:
+                  when:
+                    - description: "Auftrag angelegt"
+                      jq:
+                        expression: .ok
+                      steps:
+                        - setProperty:
+                            name: orderNum
+                            jq:
+                              expression: .orderNum
+                              resultType: java.lang.String
+                        - setBody:
+                            simple: '{"Id": "${exchangeProperty.oppId}", "BeyondCRM_Auftrag__c": "${exchangeProperty.orderNum}", "ERP_Status__c": "Übergeben"}'
+                        - to:
+                            uri: kamelet:salesforce-upsert
+                            parameters:
+                              sobject: Opportunity
+                        - log:
+                            message: "Opportunity ${exchangeProperty.label} -> CRM-Auftrag ${exchangeProperty.orderNum} (an SAP uebergeben)"
+                  otherwise:
+                    steps:
+                      - log:
+                          loggingLevel: WARN
+                          message: "Opportunity ${exchangeProperty.label}: ${body}"

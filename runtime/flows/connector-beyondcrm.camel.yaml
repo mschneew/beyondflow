@@ -1,0 +1,24 @@
+- routeTemplate:
+    id: beyondcrm-upsert
+    description: "BeyondCRM-Konnektor: legt einen Datensatz an oder aktualisiert ihn (Account | Contact) anhand der externen ID"
+    parameters:
+      - name: entity
+        description: "CRM-Entitaet: Account oder Contact"
+      - name: system
+        description: "Quellsystem fuer die externe ID (S_EXT_REF)"
+        defaultValue: SNOW
+    from:
+      uri: kamelet:source
+      steps:
+        - setHeader:
+            name: bfEntity
+            constant: "{{entity}}"
+        - setHeader:
+            name: bfSystem
+            constant: "{{system}}"
+        - convertBodyTo:
+            type: java.lang.String
+        - to:
+            uri: "sql-stored:siebel.cx_bf_api.upsert(VARCHAR ${header.bfEntity},VARCHAR ${header.bfSystem},VARCHAR ${body},OUT VARCHAR crmRowId,OUT VARCHAR crmAction)"
+            parameters:
+              dataSource: "#crmdb"

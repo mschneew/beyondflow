@@ -1,0 +1,20 @@
+- route:
+    id: crm-auftragsmonitor
+    description: Liest jede Minute den Auftragsstatus aus BeyondCRM
+    from:
+      uri: timer:crm-auftragsmonitor
+      parameters:
+        period: "60000"
+        delay: "3000"
+      steps:
+        - to:
+            uri: "sql:select order_num, account_name, nvl(erp_status_cd, 'offen') as erp_status, nvl(erp_order_num, '-') as erp_order_num from siebel.cx_bf_order_v order by order_num"
+            parameters:
+              dataSource: "#crmdb"
+        - log:
+            message: "CRM-Auftragsmonitor: ${body.size()} Auftraege gelesen"
+        - split:
+            simple: "${body}"
+            steps:
+              - log:
+                  message: "  ${body[ORDER_NUM]} | ${body[ACCOUNT_NAME]} | SAP ${body[ERP_ORDER_NUM]} (${body[ERP_STATUS]})"

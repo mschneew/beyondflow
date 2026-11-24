@@ -1,0 +1,19 @@
+# BeyondFlow – Kundenparameter
+# Kopieren nach ~/beyondflow.conf auf der BeyondFlow-VM, anpassen, dann: install/install.sh
+# Geheimnisse (Passwoerter, Keys, Tokens) stehen NICHT hier – der Installer fragt sie ab
+# und legt sie in ~/beyondflow/config/secrets.env (Rechte 600) ab.
+
+# --- BeyondCRM-Datenbank (Oracle Autonomous Database) ---
+BF_DB_TNS=<db>_low                       # TNS-Alias aus tnsnames.ora des Wallets
+BF_DB_USER=BEYONDFLOW                   # siehe db/10_beyondflow_user.sql
+BF_WALLET_ZIP=~/Wallet_<db>.zip          # Instance Wallet (nur fuer die Erstinstallation noetig)
+
+# --- Angebundene Systeme (leer lassen = System nicht angebunden, Flows werden deaktiviert) ---
+BF_SF_URL=https://<my-domain>.my.salesforce.com   # My-Domain-URL der Salesforce-Org
+BF_SNOW_INSTANCE=<instanz>               # <instanz> aus <instanz>.service-now.com
+BF_SAP_GATEWAY=http://<private-ip-sap-vm>:8095   # Ausgabe von sap-gateway/install-sap-gateway.sh
+
+# --- Versionen (fuer reproduzierbare Installationen festgeschrieben) ---
+BF_CAMEL_VERSION=4.22.0
+BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app:main   # Empfehlung: auf @sha256-Digest festschreiben (install meldet ihn)
+BF_NGINX_IMAGE=docker.io/nginxinc/nginx-unprivileged:alpine

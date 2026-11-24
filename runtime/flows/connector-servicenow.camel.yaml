@@ -1,0 +1,50 @@
+- routeTemplate:
+    id: servicenow-query
+    description: "ServiceNow-Konnektor: liest Datensaetze einer Tabelle ueber die Table API"
+    parameters:
+      - name: instance
+        description: "Instanzname (xyz fuer xyz.service-now.com)"
+        defaultValue: "{{bf.snow.instance}}"
+      - name: table
+        description: "ServiceNow-Tabelle, z. B. customer_account"
+      - name: fields
+        description: "Kommagetrennte Feldliste"
+      - name: query
+        description: "Encoded Query"
+        defaultValue: ORDERBYDESCsys_updated_on
+      - name: limit
+        defaultValue: "50"
+    from:
+      uri: kamelet:source
+      steps:
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: CamelHttpMethod
+            constant: GET
+        - setHeader:
+            name: Accept
+            constant: application/json
+        - to:
+            uri: "https://{{instance}}.service-now.com/api/now/table/{{table}}"
+            parameters:
+              sysparm_fields: "{{fields}}"
+              sysparm_limit: "{{limit}}"
+              sysparm_exclude_reference_link: "true"
+              sysparm_query: "RAW({{query}})"
+              authMethod: Basic
+              authUsername: "RAW({{env:BF_SNOW_USER}})"
+              authPassword: "RAW({{env:BF_SNOW_PASSWORD}})"
+              authenticationPreemptive: "true"
+              throwExceptionOnFailure: "false"
+        - convertBodyTo:
+            type: java.lang.String
+        - filter:
+            description: "HTTP-Fehler von ServiceNow"
+            simple: "${header.CamelHttpResponseCode} >= 300"
+            steps:
+              - log:
+                  loggingLevel: WARN
+                  message: "ServiceNow {{table}}: HTTP ${header.CamelHttpResponseCode} - ${body}"
+              - setBody:
+                  constant: '{"result":[]}'

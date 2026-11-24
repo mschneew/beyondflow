@@ -1,0 +1,749 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>BeyondFlow Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#1E1B19; --panel:#2A2522; --line:#3A332E; --text:#F3EFE8; --muted:#B9B0A6; --gold:#E8A33D; --blue:#3B7FC4; --green:#2FA088; --red:#D9534F; }
+  * { box-sizing: border-box; }
+  body { margin:0; height:100vh; display:flex; flex-direction:column; background:var(--bg); color:var(--text); font:14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display:flex; align-items:center; gap:14px; padding:10px 18px; border-bottom:3px solid var(--gold); }
+  header .name { font-size:22px; letter-spacing:-0.5px; }
+  header .name b { color:var(--gold); }
+  header .sub { color:var(--muted); font-size:13px; margin-left:6px; }
+  main { flex:1; display:flex; min-height:0; }
+  aside { width:270px; border-right:1px solid var(--line); display:flex; flex-direction:column; }
+  aside h2 { font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin:16px 16px 8px; }
+  #flows { list-style:none; margin:0; padding:0 8px; overflow:auto; flex:1; }
+  #flows li button { width:100%; text-align:left; background:none; border:0; color:var(--text); padding:9px 10px; border-radius:8px; display:flex; align-items:center; gap:10px; cursor:pointer; font:inherit; }
+  #flows li button:hover, #flows li button.sel { background:var(--panel); }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  .on { background:var(--green); } .off { background:#6B625A; }
+  .when { color:var(--muted); font-size:11px; margin-left:auto; }
+  .trig { display:inline-block; width:16px; margin-right:4px; font-size:12px; color:var(--muted); }
+  .trig.event { color:var(--gold); }
+  aside .actions { padding:12px; border-top:1px solid var(--line); }
+  .liclink { display:block; width:100%; margin-top:10px; background:none; border:0; color:var(--muted); font:12px system-ui, sans-serif; cursor:pointer; text-decoration:underline; text-underline-offset:3px; }
+  .liclink:hover { color:var(--text); }
+  .ver { margin-top:6px; text-align:center; color:#7A7068; font:11px ui-monospace, Consolas, monospace; }
+  .lic { padding:22px 28px; max-width:1100px; line-height:1.5; }
+  .lic h2 { font-size:20px; margin:0 0 6px; } .lic h3 { font-size:15px; margin:22px 0 8px; color:var(--gold); }
+  .lic p { color:var(--muted); margin:0 0 10px; }
+  .lic table { border-collapse:collapse; width:100%; font-size:13px; }
+  .lic th, .lic td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .lic th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+  .lic a { color:#8CB8E6; }
+  .lic .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .lic .ok { background:#173D35; color:#9FE0C9; } .lic .ext { background:#4A2E1E; color:#F3C27A; }
+  .work { flex:1; display:flex; flex-direction:column; min-width:0; }
+  .bar { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:7px 14px; border-bottom:1px solid var(--line); }
+  .bar label { color:var(--muted); font-size:13px; }
+  .bar input { background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:8px 10px; font:inherit; width:240px; }
+  button.btn { border:0; border-radius:6px; padding:9px 14px; font:inherit; font-weight:600; cursor:pointer; min-height:38px; }
+  .primary { background:var(--gold); color:#1E1B19; } .primary:hover { background:#F3C27A; }
+  .ghost { background:var(--panel); color:var(--text); border:1px solid var(--line) !important; } .ghost:hover { background:#352F2B; }
+  #msg { color:var(--muted); font-size:13px; }
+  #msg.ok { color:#7FD3A8; } #msg.err { color:#F08A84; }
+  nav.views { display:flex; gap:4px; margin-left:28px; }
+  nav.views button { background:none; border:0; color:var(--muted); padding:8px 14px; border-radius:8px; cursor:pointer; font:600 14px system-ui, sans-serif; }
+  nav.views button:hover { background:var(--panel); color:var(--text); }
+  nav.views button.act { background:var(--panel); color:var(--gold); }
+  .stage { flex:1; position:relative; min-height:0; }
+  .stage iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:#fff; }
+  .panel { position:absolute; inset:0; background:var(--bg); overflow:auto; display:none; }
+  .panel.show { display:block; }
+  .panel h2 { margin:0 0 12px; font-size:16px; }
+  .logline.warn { color:#F3C27A; } .logline.err { color:#F08A84; }
+  nav.views button .badge { display:none; margin-left:6px; min-width:18px; padding:0 5px; border-radius:9px; background:var(--red); color:#fff; font-size:11px; line-height:18px; }
+  nav.views button .badge.show { display:inline-block; } nav.views button .badge.warn { background:var(--gold); color:#1E1B19; }
+  .ai { padding:20px 26px; max-width:1200px; }
+  .ai .top { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px; }
+  .ai .top h2 { font-size:18px; margin:0 12px 0 0; } .ai .top .meta { color:var(--muted); font-size:12px; }
+  .ai .top .btn { min-height:32px; padding:6px 12px; font-size:13px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-left:4px solid #6B625A; border-radius:10px; padding:14px 16px; }
+  .card.error { border-left-color:var(--red); } .card.warn { border-left-color:var(--gold); } .card.ok { border-left-color:var(--green); }
+  .card .hd { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.6px; }
+  .card .st { margin-left:auto; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:700; text-transform:none; letter-spacing:0; }
+  .st.error { background:#4A1F1D; color:#F6A29D; } .st.warn { background:#4A3A1E; color:#F3C27A; } .st.ok { background:#173D35; color:#9FE0C9; } .st.idle { background:#3A332E; color:#B9B0A6; }
+  .card h4 { margin:8px 0 4px; font-size:15px; } .card p { margin:0 0 8px; color:var(--muted); font-size:13px; }
+  .card ul { margin:6px 0 8px 18px; padding:0; font-size:13px; } .card li { margin:3px 0; }
+  .card details { margin:6px 0; } .card summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .card pre.ev { margin:6px 0 0; padding:8px; background:var(--bg); border-radius:6px; font-size:11.5px; white-space:pre-wrap; word-break:break-word; }
+  .card .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .card .acts .btn { min-height:30px; padding:5px 10px; font-size:12.5px; }
+  .card .res { margin-top:8px; font-size:12.5px; } .res.ok { color:#7FD3A8; } .res.bad { color:#F08A84; }
+  .aibox { background:#1F2A36; border:1px solid var(--blue); border-radius:10px; padding:14px 18px; margin-bottom:16px; font-size:14px; line-height:1.55; white-space:pre-wrap; }
+  .aibox .lbl { font-size:12px; color:#8CB8E6; letter-spacing:.6px; text-transform:uppercase; margin-bottom:6px; white-space:normal; }
+  #outp { display:none; flex-direction:column; }
+  #outp.show { display:flex; }
+  #outp pre { flex:1; overflow:auto; }
+  #resbox { display:none; padding:14px 22px 4px; border-bottom:1px solid var(--line); }
+  #resbox.show { display:block; }
+  #resbox h3 { margin:0 0 8px; font-size:13px; color:var(--muted); font-weight:600; }
+  #resbox table { border-collapse:collapse; font-size:13px; width:100%; max-width:980px; }
+  #resbox th, #resbox td { text-align:left; padding:5px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  #resbox th { color:var(--muted); font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; }
+  #resbox td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .meter { display:inline-block; width:110px; height:8px; background:var(--panel); border-radius:4px; vertical-align:middle; margin-left:8px; overflow:hidden; }
+  .meter i { display:block; height:100%; background:var(--green); } .meter i.hi { background:var(--gold); } .meter i.crit { background:var(--red); }
+  #resbox svg { vertical-align:middle; }
+  .filt { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:10px 22px; border-bottom:1px solid var(--line); background:var(--bg); }
+  .filt input[type=search] { background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:6px; padding:7px 10px; font:inherit; width:280px; }
+  .filt label { color:var(--muted); font-size:13px; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .filt .btn { min-height:32px; padding:6px 12px; font-size:13px; }
+  .filt .cnt { color:var(--muted); font-size:12px; margin-left:auto; }
+  .tabs { display:flex; gap:4px; padding:6px 10px 0; }
+  .tabs button { background:none; border:0; color:var(--muted); padding:6px 12px; border-bottom:2px solid transparent; cursor:pointer; font:inherit; }
+  .tabs button.act { color:var(--text); border-color:var(--gold); }
+  .map { padding:16px 22px; }
+  .map h3 { margin:0 0 10px; font-size:13px; color:var(--muted); font-weight:600; }
+  .map table { border-collapse:separate; border-spacing:0 6px; }
+  .map td { padding:0; vertical-align:middle; }
+  .pill { display:inline-block; padding:6px 12px; border-radius:8px; font:12px/1.3 ui-monospace, "DejaVu Sans Mono", Consolas, monospace; white-space:nowrap; }
+  .src { background:#1F3550; border:1px solid var(--blue); color:#DCE8F5; }
+  .const { background:#3A332E; border:1px dashed #8F877E; color:#E8E0D6; }
+  .tgt { background:#173D35; border:1px solid var(--green); color:#D6F0E8; }
+  .arrow { width:150px; text-align:center; color:var(--gold); font-size:11px; white-space:nowrap; }
+  .arrow span { display:block; border-top:2px solid var(--gold); margin:4px 0; position:relative; }
+  .arrow span::after { content:''; position:absolute; right:-2px; top:-6px; border-left:9px solid var(--gold); border-top:5px solid transparent; border-bottom:5px solid transparent; }
+  .colh { font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); padding-bottom:4px !important; }
+  .mhead { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:10px; }
+  .mhead h3 { margin:0 12px 0 0; }
+  .mhead .hint { color:var(--muted); font-size:12px; flex-basis:100%; }
+  .mhead .btn { min-height:32px; padding:6px 12px; font-size:13px; }
+  .medit { position:relative; display:grid; grid-template-columns:minmax(220px,max-content) 240px minmax(220px,max-content); align-items:start; }
+  .medit svg { position:absolute; left:0; top:0; pointer-events:none; overflow:visible; }
+  .mcol { display:flex; flex-direction:column; gap:6px; }
+  .mcol .pill { cursor:pointer; user-select:none; }
+  .mcol .pill:hover { filter:brightness(1.25); }
+  .pill.selp { outline:2px solid var(--gold); outline-offset:2px; }
+  .pill.unm { background:transparent; border:1px dashed #4B5F55; color:#9DB5AB; }
+  .req { color:var(--gold); }
+  .menu { position:fixed; z-index:20; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px #0008; }
+  .menu button { display:block; width:100%; text-align:left; background:none; border:0; color:var(--text); padding:7px 12px; border-radius:6px; font:13px system-ui, sans-serif; cursor:pointer; }
+  .menu button:hover { background:#352F2B; }
+  .menu .t { color:var(--muted); font-size:11px; padding:4px 12px; }
+  pre { margin:0; padding:16px 22px; font:12px/1.45 ui-monospace, "DejaVu Sans Mono", Consolas, monospace; color:#D8D2CA; white-space:pre; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="38" height="38" viewBox="0 0 120 120" aria-hidden="true">
+    <rect x="2" y="2" width="116" height="116" rx="28" fill="#2A2522"/>
+    <path d="M16 82 C 38 82, 40 38, 62 38 S 86 82, 100 82" fill="none" stroke="#5A4A3A" stroke-width="16" stroke-linecap="round"/>
+    <path d="M16 82 C 38 82, 40 38, 62 38 S 86 82, 100 82" fill="none" stroke="#E8A33D" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="16" cy="82" r="10" fill="#3B7FC4" stroke="#1E1B19" stroke-width="3"/>
+    <circle cx="62" cy="38" r="10" fill="#F3EFE8" stroke="#1E1B19" stroke-width="3"/>
+    <circle cx="100" cy="82" r="10" fill="#2FA088" stroke="#1E1B19" stroke-width="3"/>
+  </svg>
+  <div class="name">Beyond<b>Flow</b> <span class="sub">Studio</span></div>
+  <nav class="views" aria-label="Ansicht">
+    <button id="vDesign" class="act">Designer</button>
+    <button id="vMap">Mapping</button>
+    <button id="vStatus">Laufzeit</button>
+    <button id="vLogs">Log</button>
+    <button id="vAi">Assistent<span class="badge" id="aiBadge"></span></button>
+  </nav>
+</header>
+<main>
+  <aside>
+    <h2>Flows</h2>
+    <ul id="flows"></ul>
+    <div class="actions"><button class="btn ghost" id="newBtn" style="width:100%">+ Neuer Flow</button>
+      <button class="liclink" id="licBtn">Drittsoftware &amp; Lizenzen</button>
+      <div class="ver" id="ver">BeyondFlow</div></div>
+  </aside>
+  <section class="work">
+    <div class="bar">
+      <label for="flowId">Flow-ID</label>
+      <input id="flowId" placeholder="z. B. crm-auftraege" autocomplete="off">
+      <button class="btn primary" id="saveBtn">Speichern &amp; deployen</button>
+      <button class="btn ghost" id="stopBtn">Deaktivieren</button>
+      <button class="btn ghost" id="restartBtn" title="Camel-Laufzeit neu starten (z. B. nach Fehlern beim Nachladen)">Laufzeit neu starten</button>
+      <span id="msg"></span>
+    </div>
+    <div class="stage">
+      <iframe id="kaoto" src="/#/" title="Kaoto Designer"></iframe>
+      <div id="map" class="panel map"></div>
+      <div id="ai" class="panel"><div class="ai">
+        <div class="top">
+          <h2>Betriebsassistent</h2>
+          <button class="btn ghost" id="aiRefresh">Neu analysieren</button>
+          <button class="btn primary" id="aiSummary" title="Fasst die Lage per KI zusammen (Claude API, BF_AI_KEY in secrets.env)">KI-Zusammenfassung</button>
+          <span class="meta" id="aiMeta"></span>
+        </div>
+        <div id="aiText"></div>
+        <div class="cards" id="aiCards"><p style="color:var(--muted)">lädt …</p></div>
+      </div></div>
+      <div id="lic" class="panel"><div class="lic">
+        <h2>Drittsoftware &amp; Lizenzen</h2>
+        <p>BeyondFlow baut auf Open-Source-Software auf. Die folgenden Bestandteile werden mit BeyondFlow verwendet. Die Namen der Projekte und ihre Logos sind Marken ihrer jeweiligen Inhaber; BeyondFlow ist kein Produkt dieser Projekte und wird von ihnen nicht unterstützt oder empfohlen.</p>
+        <h3>Mitgelieferte Open-Source-Bestandteile</h3>
+        <table>
+          <tr><th>Bestandteil</th><th>Verwendung</th><th>Lizenz</th></tr>
+          <tr><td>Apache Camel 4.22 (Kern, Komponenten, Kamelets, Camel JBang)</td><td>Laufzeit der Flows</td><td><span class="tag ok">Apache-2.0</span> · <a href="/licenses/APACHE-LICENSE-2.0.txt" target="_blank">Lizenztext</a> · <a href="/licenses/NOTICE-Apache-Camel.txt" target="_blank">NOTICE</a></td></tr>
+          <tr><td>Kaoto (Web-Designer)</td><td>Grafischer Flow-Designer</td><td><span class="tag ok">Apache-2.0</span> · <a href="https://github.com/KaotoIO/kaoto" target="_blank" rel="noopener">Quelle</a></td></tr>
+          <tr><td>In Kaoto enthaltene Web-Bibliotheken (u. a. PatternFly, React)</td><td>Oberfläche des Designers</td><td><span class="tag ok">überwiegend MIT</span> · Liste im Kaoto-Quellcode</td></tr>
+          <tr><td>Camel-Katalog (Red Hat build of Apache Camel 4.18)</td><td>Bausteine und Formulare im Designer</td><td><span class="tag ok">Apache-2.0</span></td></tr>
+          <tr><td>JBang</td><td>Start der Camel-Laufzeit</td><td><span class="tag ok">MIT</span></td></tr>
+          <tr><td>Apache Commons DBCP2</td><td>Datenbank-Verbindungspool</td><td><span class="tag ok">Apache-2.0</span></td></tr>
+          <tr><td>Apache HttpComponents (HttpClient 5)</td><td>HTTP-Aufrufe (ServiceNow, SAP-Gateway)</td><td><span class="tag ok">Apache-2.0</span></td></tr>
+          <tr><td>jackson-jq, Jackson</td><td>Mapping-Ausdrücke (jq), JSON</td><td><span class="tag ok">Apache-2.0</span></td></tr>
+          <tr><td>nginx (Container nginx-unprivileged)</td><td>Auslieferung von Studio und Designer</td><td><span class="tag ok">BSD-2-Clause</span></td></tr>
+          <tr><td>OpenJDK</td><td>Java-Laufzeit</td><td><span class="tag ok">GPL-2.0 mit Classpath Exception</span></td></tr>
+        </table>
+        <h3>Nicht mitgeliefert – vom Kunden selbst zu beziehen</h3>
+        <table>
+          <tr><th>Bestandteil</th><th>Verwendung</th><th>Bedingungen</th></tr>
+          <tr><td>Oracle JDBC (ojdbc11, oraclepki)</td><td>Zugriff auf die CRM-Datenbank</td><td><span class="tag ext">Oracle Free Use Terms</span> · wird beim Start aus Maven Central geladen, nicht weitergegeben</td></tr>
+          <tr><td>SAP Java Connector (JCo) 3.x</td><td>SAP-Gateway (RFC)</td><td><span class="tag ext">SAP-Lizenz</span> · Weitergabe durch Dritte nicht erlaubt; Download durch den Kunden bei SAP, SAP-Nutzerlizenzen nötig (indirekte Nutzung prüfen)</td></tr>
+          <tr><td>ServiceNow, Salesforce, SAP S/4HANA</td><td>Angebundene Systeme</td><td><span class="tag ext">Kundenvertrag</span> · eigene Zugänge und API-Rechte beim jeweiligen Anbieter</td></tr>
+        </table>
+        <h3>Hinweise</h3>
+        <p>Apache Camel, Camel und Apache sind Marken der Apache Software Foundation. Kaoto ist ein Projekt der Kaoto-Community. SAP, Oracle, ServiceNow und Salesforce sind Marken ihrer jeweiligen Inhaber.</p>
+        <p>Diese Übersicht ist eine technische Zusammenstellung und keine Rechtsberatung. Vor einem kommerziellen Vertrieb sollte eine vollständige Liste aller Abhängigkeiten (SBOM) erzeugt und rechtlich geprüft werden.</p>
+      </div></div>
+      <div id="outp" class="panel">
+        <div class="filt">
+          <input type="search" id="flt" placeholder="Filter, z. B. crm-orders-to-sap oder AU-2026" autocomplete="off">
+          <button class="btn ghost" id="fltCur" title="Nach der Flow-ID aus der Werkzeugleiste filtern">Aktueller Flow</button>
+          <label id="fltProbL"><input type="checkbox" id="fltProb"> nur Warnungen und Fehler</label>
+          <span class="cnt" id="fltCnt"></span>
+        </div>
+        <div id="resbox"></div>
+        <pre id="out"></pre>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+localStorage.setItem('navigationExpanded', 'false');
+const $ = (id) => document.getElementById(id);
+let current = null, tab = 'design';
+
+const TEMPLATE = (id) => `- route:
+    id: ${id}
+    from:
+      uri: timer:${id}
+      parameters:
+        period: "10000"
+      steps:
+        - log:
+            message: "Flow ${id} laeuft"
+`;
+
+function msg(text, cls) { const m = $('msg'); m.textContent = text; m.className = cls || ''; }
+function yamlId(y) { const m = /\bid:\s*["']?([a-z0-9-]+)/i.exec(y || ''); return m ? m[1].toLowerCase() : ''; }
+
+// Kaoto-Logo im eingebetteten Designer ausblenden (gleiche Herkunft, daher per CSS moeglich)
+function skinKaoto() {
+  try {
+    const d = $('kaoto').contentDocument;
+    if (!d || !d.head || d.getElementById('bf-skin')) return;
+    const st = d.createElement('style'); st.id = 'bf-skin';
+    st.textContent = '.pf-v6-c-masthead__brand, .pf-v5-c-masthead__brand, img.shell__logo { display:none !important; }';
+    d.head.appendChild(st);
+  } catch (e) { /* about:blank oder noch nicht geladen */ }
+}
+$('kaoto').addEventListener('load', skinKaoto);
+skinKaoto();
+
+function loadIntoKaoto(yaml) {
+  // Kaoto erst entladen (es speichert dabei seinen Stand), dann den neuen Flow setzen und neu laden
+  const fr = $('kaoto');
+  fr.onload = () => {
+    fr.onload = null;
+    localStorage.setItem('navigationExpanded', 'false');
+    localStorage.setItem('sourceCode', yaml);
+    fr.src = '/#/?t=' + Date.now();
+  };
+  fr.src = 'about:blank';
+}
+
+async function api(path, opts) {
+  const r = await fetch('/api' + path, opts);
+  const t = await r.text();
+  if (!r.ok) throw new Error(t || r.status);
+  return t;
+}
+
+async function refreshList() {
+  try {
+    const list = JSON.parse(await api('/flows'));
+    const ul = $('flows'); ul.innerHTML = '';
+    if (!list.length) { ul.innerHTML = '<li style="color:var(--muted);padding:8px 10px">Noch keine Flows</li>'; }
+    for (const f of list) {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      if (f.id === current) b.className = 'sel';
+      const d = document.createElement('span'); d.className = 'dot ' + (f.active ? 'on' : 'off');
+      const n = document.createElement('span'); n.textContent = f.id;
+      const tg = document.createElement('span'); tg.className = 'trig ' + (f.trigger || '');
+      tg.textContent = { event: '⚡', timer: '⏱', connector: '◇' }[f.trigger] || '';
+      tg.title = { event: 'Ereignisgesteuert', timer: 'Zeitgesteuert (Timer)', connector: 'Konnektor (Baustein)' }[f.trigger] || '';
+      n.prepend(tg);
+      const w = document.createElement('span'); w.className = 'when';
+      w.textContent = new Date(f.modified).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+      b.append(d, n, w);
+      b.title = f.active ? 'aktiv' : 'deaktiviert';
+      b.onclick = () => openFlow(f.id);
+      li.append(b); ul.append(li);
+    }
+  } catch (e) { msg('API nicht erreichbar: ' + e.message, 'err'); }
+}
+
+async function openFlow(id) {
+  try {
+    const y = await api('/flows/' + id);
+    current = id; $('flowId').value = id;
+    loadIntoKaoto(y); msg('Flow ' + id + ' geöffnet'); refreshList();
+    if (tab === 'map') setTimeout(renderMap, 300);
+  } catch (e) { msg(e.message, 'err'); }
+}
+
+$('newBtn').onclick = () => {
+  const id = (prompt('Name des neuen Flows (a-z, 0-9, -):', 'mein-flow') || '').trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) { if (id) msg('Ungültige Flow-ID', 'err'); return; }
+  current = id; $('flowId').value = id; loadIntoKaoto(TEMPLATE(id));
+  msg('Neuer Flow ' + id + ' – im Designer bearbeiten, dann speichern');
+};
+
+$('saveBtn').onclick = async () => {
+  await new Promise(r => setTimeout(r, 400));
+  const y = localStorage.getItem('sourceCode') || '';
+  const id = ($('flowId').value.trim() || yamlId(y)).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) { msg('Bitte eine gültige Flow-ID angeben (a-z, 0-9, -)', 'err'); return; }
+  if (!y.trim()) { msg('Der Designer ist leer', 'err'); return; }
+  try {
+    msg('speichere …');
+    const t = await api('/flows/' + id, { method:'PUT', headers:{ 'Content-Type':'text/yaml' }, body:y });
+    current = id; $('flowId').value = id;
+    msg(t + '', 'ok'); refreshList();
+    setTimeout(refreshOut, 15000);
+  } catch (e) { msg(e.message, 'err'); }
+};
+
+$('stopBtn').onclick = async () => {
+  const id = $('flowId').value.trim();
+  if (!id) return;
+  if (!confirm('Flow ' + id + ' deaktivieren?')) return;
+  try { msg(await api('/flows/' + id + '/stop', { method:'POST' }), 'ok'); refreshList(); setTimeout(refreshOut, 15000); }
+  catch (e) { msg(e.message, 'err'); }
+};
+
+let lastOut = '';
+const resHist = {};
+function bar(pct, max) { const w = Math.max(0, Math.min(100, pct / max * 100)); return '<span class="meter"><i class="' + (w > 85 ? 'crit' : w > 60 ? 'hi' : '') + '" style="width:' + w.toFixed(0) + '%"></i></span>'; }
+function spark(vals, max) {
+  if (vals.length < 2) return '';
+  const pts = vals.map((v, i) => (i * 120 / 29).toFixed(1) + ',' + (18 - Math.min(v, max) / max * 16).toFixed(1)).join(' ');
+  return '<svg width="122" height="20" viewBox="0 0 122 20" aria-hidden="true"><polyline points="' + pts + '" fill="none" stroke="#E8A33D" stroke-width="1.5"/></svg>';
+}
+function age(s) { return s >= 86400 ? Math.floor(s / 86400) + ' T ' + Math.floor(s % 86400 / 3600) + ' h' : s >= 3600 ? Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' min' : Math.floor(s / 60) + ' min'; }
+async function refreshRes() {
+  try {
+    const d = JSON.parse(await api('/resources')), cpuMax = 100 * d.host.cpus, h = d.host;
+    let html = '<h3>Ressourcen · VM ' + h.cpus + ' CPU, ' + (h.memTotalMb / 1024).toFixed(1) + ' GB RAM · Last (1 Min.) ' + h.load1 + '</h3><table><tr><th>Prozess</th><th>PID</th><th>CPU</th><th>Verlauf CPU (5 Min.)</th><th>Speicher</th><th>läuft seit</th></tr>';
+    for (const p of d.processes) {
+      const k = p.role + p.pid; (resHist[k] = resHist[k] || []).push(p.cpu); if (resHist[k].length > 30) resHist[k].shift();
+      html += '<tr><td>' + esc(p.role) + '</td><td class="num">' + p.pid + '</td><td class="num">' + p.cpu.toFixed(1) + ' %' + bar(p.cpu, cpuMax) + '</td><td>' + spark(resHist[k], cpuMax) + '</td><td class="num">' + p.memMb + ' MB' + bar(p.memMb, h.memTotalMb) + '</td><td>' + age(p.ageSec) + '</td></tr>';
+    }
+    (resHist.host = resHist.host || []).push(h.cpu * h.cpus); if (resHist.host.length > 30) resHist.host.shift();
+    html += '<tr><td><b>VM gesamt</b></td><td></td><td class="num">' + (h.cpu * h.cpus).toFixed(1) + ' %' + bar(h.cpu * h.cpus, cpuMax) + '</td><td>' + spark(resHist.host, cpuMax) + '</td><td class="num">' + h.memUsedMb + ' MB' + bar(h.memUsedMb, h.memTotalMb) + '</td><td></td></tr></table>';
+    html += '<p style="color:var(--muted);font-size:11.5px;margin:6px 0 8px">CPU in % eines Kerns (max. ' + cpuMax + ' %), gemessen über 0,5 s; Speicher = belegter Arbeitsspeicher (RSS).</p>';
+    $('resbox').innerHTML = html;
+  } catch (e) { $('resbox').innerHTML = '<h3>Ressourcen nicht verfügbar: ' + esc(e.message) + '</h3>'; }
+}
+async function refreshOut() {
+  if (tab === 'status') refreshRes();
+  try {
+    if (tab !== 'status' && tab !== 'logs') return;
+    lastOut = await api(tab === 'status' ? '/status' : '/logs');
+    renderOut();
+  } catch (e) { $('out').textContent = 'Fehler: ' + e.message; }
+}
+function renderOut() {
+  const o = $('out'), atEnd = o.scrollTop + o.clientHeight >= o.scrollHeight - 20;
+  const q = $('flt').value.trim().toLowerCase(), prob = tab === 'logs' && $('fltProb').checked;
+  const lines = lastOut.replace(/\s+$/, '').split('\n');
+  let shown = [], total = 0;
+  if (tab === 'status') {
+    total = Math.max(lines.length - 1, 0);
+    shown = lines.filter((l, i) => i === 0 || !q || l.toLowerCase().includes(q));
+    o.textContent = shown.join('\n') || '(keine Ausgabe)';
+    $('fltCnt').textContent = q ? (shown.length - 1) + ' von ' + total + ' Routen' : '';
+  } else {
+    // Eintraege: Zeile mit Zeitstempel plus folgende Fortsetzungszeilen (Stacktrace)
+    const entries = [];
+    for (const l of lines) {
+      if (/^\d{4}-\d\d-\d\d /.test(l) || !entries.length) entries.push([l]); else entries[entries.length - 1].push(l);
+    }
+    total = entries.length;
+    const keep = entries.filter(e => {
+      const t = e.join('\n');
+      if (prob && !/ (WARN|ERROR) /.test(e[0])) return false;
+      return !q || t.toLowerCase().includes(q);
+    });
+    o.innerHTML = keep.map(e => e.map(l =>
+      '<span class="logline' + (/ ERROR |Exception|Caused by|^\s+at /.test(l) ? ' err' : / WARN /.test(l) ? ' warn' : '') + '">' + esc(l) + '</span>').join('\n')).join('\n')
+      || '(keine passenden Einträge)';
+    $('fltCnt').textContent = (q || prob) ? keep.length + ' von ' + total + ' Einträgen' : total + ' Einträge';
+    if (atEnd) o.scrollTop = o.scrollHeight;
+  }
+}
+$('flt').oninput = renderOut;
+$('fltProb').onchange = renderOut;
+$('fltCur').onclick = () => { $('flt').value = $('flowId').value.trim(); renderOut(); };
+
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// ---------- Mapping-Editor ----------
+const CRM_COLS = {
+  Account: { table: 'S_ORG_EXT', req: ['NAME'], cols: ['NAME','LOC','OU_NUM','OU_TYPE_CD','CUST_STAT_CD','INDUST_CD','VAT_REGN_NUM','MAIN_PH_NUM','URL','PAR_OU_ID','ACTIVE_FLG'] },
+  Contact: { table: 'S_CONTACT', req: ['LAST_NAME'], cols: ['PER_TITLE','FST_NAME','LAST_NAME','JOB_TITLE','EMAIL_ADDR','WORK_PH_NUM','CELL_PH_NUM','PR_DEPT_OU_ID','CON_CD','SUPPRESS_EMAIL_FLG','SUPPRESS_CALL_FLG','CONSENT_STAT_CD','CONSENT_DT','ACTIVE_FLG'] }
+};
+const LOOKUP_COLS = ['PAR_OU_ID', 'PR_DEPT_OU_ID'];   // Verweise auf eine Firma -> per externer ID nachschlagen
+// Profile: welche Quelle und welches Ziel ein Mapping-Schritt verbindet
+function soqlInfo(y) {
+  const m = /soql:\s*"([^"]+)"/.exec(y);
+  if (!m) return null;
+  const top = m[1].replace(/\([^)]*\)/g, '');
+  const s = /SELECT\s+(.+?)\s+FROM\s+(\w+)/i.exec(top);
+  return s ? { fields: s[1].split(',').map(x => x.trim()).filter(Boolean), object: s[2] } : null;
+}
+const SF_ACCOUNT_FIELDS = ['Id', 'Name', 'BillingCity', 'BillingStreet', 'BillingPostalCode', 'BillingCountry', 'AccountNumber', 'Phone', 'Fax', 'Website', 'Description'];
+function profileFor(y) {
+  const id = yamlId(y), q = soqlInfo(y);
+  const crm = (entity) => CRM_COLS[entity] || { table: '', req: [], cols: [] };
+  if (id === 'sf-accounts-to-crm' || id === 'sf-contacts-to-crm') {
+    const entity = id === 'sf-accounts-to-crm' ? 'Account' : 'Contact', def = crm(entity);
+    return { title: 'Salesforce ' + (q ? q.object : entity) + ' → BeyondCRM ' + entity + ' (' + def.table + ')',
+      src: 'Salesforce · ' + (q ? q.object : entity), tgt: 'BeyondCRM · ' + entity,
+      sources: q ? q.fields : [], targets: ['_EXT_ID', ...def.cols], req: ['_EXT_ID', ...def.req],
+      fieldsParam: 'soql', addPrompt: 'API-Name des Salesforce-Feldes (z. B. Industry, BillingPostalCode):' };
+  }
+  if (id === 'crm-accounts-to-sf') return {
+    title: 'BeyondCRM Account → Salesforce Account', src: 'BeyondCRM · Account', tgt: 'Salesforce · Account',
+    sources: ['sfId', 'NAME', 'LOC', 'OU_NUM', 'MAIN_PH_NUM', 'URL', 'INDUST_CD', 'OU_TYPE_CD', 'VAT_REGN_NUM', 'CUST_STAT_CD'],
+    targets: SF_ACCOUNT_FIELDS, req: ['Id', 'Name'], fieldsParam: false, addPrompt: 'Name des CRM-Feldes:' };
+  if (id === 'sf-opportunities-to-crm') return {
+    title: 'Salesforce Opportunity → BeyondCRM Auftrag (S_ORDER)', src: 'Salesforce · Opportunity', tgt: 'BeyondCRM · Auftrag',
+    sources: q ? q.fields : [], targets: ['_EXT_ID', 'ACCOUNT_EXT_ID', 'ORDER_DT', 'ORDER_AMT', 'ITEMS'],
+    req: ['_EXT_ID', 'ACCOUNT_EXT_ID', 'ITEMS'], fieldsParam: 'soql', addPrompt: 'API-Name des Opportunity-Feldes:' };
+  if (id === 'crm-orders-to-sf') return {
+    title: 'BeyondCRM Auftrag → Salesforce Opportunity', src: 'BeyondCRM · Auftrag', tgt: 'Salesforce · Opportunity',
+    sources: ['sfId', 'ORDER_NUM', 'ERP_ORDER_NUM', 'ERP_STATUS_CD'],
+    targets: ['Id', 'BeyondCRM_Auftrag__c', 'SAP_Auftrag__c', 'ERP_Status__c', 'NextStep', 'Description'],
+    req: ['Id'], fieldsParam: false, addPrompt: 'Name des CRM-Feldes:' };
+  if (/kamelet:sap-salesorder-create/.test(y)) return {
+    title: 'BeyondCRM Auftrag → SAP Kundenauftrag (BAPI_SALESORDER_CREATEFROMDAT2)',
+    src: 'BeyondCRM · Auftrag', tgt: 'SAP · Kundenauftrag',
+    sources: ['orderNum', 'accountName', 'kunnr', 'vkorg', 'vtweg', 'spart', 'auart'],
+    targets: ['PURCH_NO_C', 'SOLD_TO', 'SALES_ORG', 'DISTR_CHAN', 'DIVISION', 'DOC_TYPE', 'ITEMS', 'REQ_DATE_H', 'PMNTTRMS', 'INCOTERMS1', 'INCOTERMS2'],
+    req: ['PURCH_NO_C', 'SOLD_TO', 'SALES_ORG', 'DISTR_CHAN', 'DIVISION', 'DOC_TYPE', 'ITEMS'],
+    extId: false, fieldsParam: false, addPrompt: 'Name des CRM-Feldes im Auftrags-JSON:'
+  };
+  const entity = (/entity:\s*(\w+)/.exec(y) || [,''])[1];
+  const table = (/table:\s*([\w.]+)/.exec(y) || [,'Quelle'])[1];
+  const def = CRM_COLS[entity] || { table: '', req: [], cols: [] };
+  const f = /fields:\s*["']?([\w,]+)/.exec(y);
+  return {
+    title: 'ServiceNow ' + table + ' → BeyondCRM ' + entity + (def.table ? ' (' + def.table + ')' : ''),
+    src: 'ServiceNow · ' + table, tgt: 'BeyondCRM · ' + entity,
+    sources: f ? f[1].split(',').filter(Boolean) : [],
+    targets: ['_EXT_ID', ...def.cols], req: ['_EXT_ID', ...def.req],
+    extId: true, fieldsParam: true, addPrompt: 'Name des ServiceNow-Feldes (z. B. state, zip, u_branche):'
+  };
+}
+const M = { maps: [], fields: [], consts: [], p: null, sel: null, dirty: false, ok: false };
+
+function mappingBlock(y) {
+  const lines = y.split('\n');
+  let i = lines.findIndex(l => /description:\s*"?Mapping/.test(l));
+  if (i < 0) return [];
+  while (i < lines.length && !/^\s*\{\s*$/.test(lines[i])) i++;
+  const ind = (/^(\s*)/.exec(lines[i] || '') || ['', ''])[1];
+  const out = [];
+  for (let j = i + 1; j < lines.length && lines[j] !== ind + '}'; j++) out.push(lines[j]);
+  return out;
+}
+function parseMapping(y) {
+  const maps = [];
+  for (const line of mappingBlock(y)) {
+    const m = /^\s+"([^"]+)"\s*:\s*(.+?),?\s*$/.exec(line);
+    if (!m) continue;
+    let col = m[1], v = m[2].trim(), lookup = false, r;
+    const lk = /^_LOOKUP:[^:]+:(.+)$/.exec(col);
+    if (lk) { col = lk[1]; lookup = true; }
+    if ((r = /^\.([\w.]+)$/.exec(v))) maps.push({ col, kind: lookup ? 'lookup' : 'field', src: r[1] });
+    else if ((r = /^"((?:[^"\\]|\\.)*)"$/.exec(v))) maps.push({ col, kind: 'const', src: JSON.parse(v) });
+    else if ((r = /^\(if \.([\w.]+) == "true" then "Y" else "N" end\)$/.exec(v))) maps.push({ col, kind: 'yn', src: r[1] });
+    else maps.push({ col, kind: 'raw', src: v });
+  }
+  return maps;
+}
+
+function renderMap() {
+  const y = localStorage.getItem('sourceCode') || '';
+  M.maps = parseMapping(y);
+  M.ok = /description:\s*"?Mapping/.test(y) && M.maps.length > 0;
+  M.p = profileFor(y);
+  M.fields = [...M.p.sources];
+  for (const m of M.maps) if ((m.kind === 'field' || m.kind === 'yn' || m.kind === 'lookup') && !M.fields.includes(m.src)) M.fields.push(m.src);
+  M.consts = [...new Set(M.maps.filter(m => m.kind === 'const').map(m => m.src))];
+  M.sel = null; M.dirty = false;
+  drawEditor();
+}
+
+function srcLabel(m) {
+  if (m.kind === 'const') return 'Konstante';
+  if (m.kind === 'yn') return 'true/false → Y/N';
+  if (m.kind === 'lookup') return 'Lookup Firma';
+  if (m.kind === 'raw') return 'Ausdruck';
+  return '';
+}
+
+function drawEditor() {
+  const el = $('map');
+  if (!M.ok) { el.innerHTML = '<h3>Dieser Flow enthält keinen Mapping-Schritt. Mapping-Flows: snow-accounts-to-crm, snow-contacts-to-crm, crm-orders-to-sap.</h3>'; return; }
+  const P = M.p;
+  const targets = [...P.targets];
+  for (const m of M.maps) if (!targets.includes(m.col)) targets.push(m.col);
+  let h = '<div class="mhead"><h3>Feld-Mapping · ' + esc(P.title) + '</h3>'
+    + '<button class="btn ghost" id="mAddF">+ Feld</button><button class="btn ghost" id="mAddC">+ Konstante</button>'
+    + '<button class="btn primary" id="mApply"' + (M.dirty ? '' : ' disabled style="opacity:.5"') + '>Mapping übernehmen</button>'
+    + '<span class="hint">Quelle anklicken, dann Ziel anklicken = Linie ziehen. Verbundenes Ziel anklicken = Umwandlung ändern oder Linie löschen.'
+    + (M.dirty ? ' <b style="color:var(--gold)">Ungespeicherte Änderungen – „Mapping übernehmen“, danach „Speichern &amp; deployen“.</b>' : '') + '</span></div>';
+  h += '<div class="medit" id="medit"><svg id="mlines"></svg><div class="mcol"><div class="colh">' + esc(P.src) + '</div>';
+  for (const f of M.fields) h += '<span class="pill src' + (M.sel && M.sel.kind === 'field' && M.sel.src === f ? ' selp' : '') + '" data-s="f:' + esc(f) + '">' + esc(f) + '</span>';
+  for (const c of M.consts) h += '<span class="pill const' + (M.sel && M.sel.kind === 'const' && M.sel.src === c ? ' selp' : '') + '" data-s="c:' + esc(c) + '">„' + esc(c) + '“</span>';
+  for (const m of M.maps.filter(m => m.kind === 'raw')) h += '<span class="pill const" data-s="r:' + esc(m.col) + '" title="' + esc(m.src) + '">' + (m.col === 'ITEMS' ? 'Positionen (items[])' : 'Ausdruck') + '</span>';
+  h += '</div><div></div><div class="mcol"><div class="colh">' + esc(P.tgt) + '</div>';
+  for (const t of targets) {
+    const mapped = M.maps.some(m => m.col === t);
+    const name = t === '_EXT_ID' ? 'Externe ID' : t;
+    const req = P.req.includes(t);
+    h += '<span class="pill tgt' + (mapped ? '' : ' unm') + '" data-t="' + esc(t) + '">' + esc(name) + (req ? ' <span class="req">*</span>' : '') + '</span>';
+  }
+  h += '</div></div>';
+  el.innerHTML = h;
+  el.querySelectorAll('[data-s]').forEach(p => p.onclick = () => clickSrc(p.dataset.s));
+  el.querySelectorAll('[data-t]').forEach(p => p.onclick = (e) => clickTgt(p.dataset.t, e));
+  $('mAddF').onclick = () => {
+    const f = (prompt(P.addPrompt) || '').trim();
+    if (!/^\w+$/.test(f)) return;
+    if (!M.fields.includes(f)) M.fields.push(f);
+    M.sel = { kind: 'field', src: f }; M.dirty = true; drawEditor();
+  };
+  $('mAddC').onclick = () => {
+    const c = prompt('Fester Wert (wird in jedes Zielfeld geschrieben, mit dem Sie ihn verbinden):');
+    if (c === null || c === '') return;
+    if (!M.consts.includes(c)) M.consts.push(c);
+    M.sel = { kind: 'const', src: c }; M.dirty = true; drawEditor();
+  };
+  $('mApply').onclick = applyMapping;
+  requestAnimationFrame(drawLines);
+}
+
+function clickSrc(key) {
+  const kind = key[0] === 'f' ? 'field' : key[0] === 'c' ? 'const' : 'raw';
+  const src = key.slice(2);
+  if (kind === 'raw') { msg('Dieser Ausdruck kann nur im Designer (Schritt „setBody“) bearbeitet werden'); return; }
+  M.sel = (M.sel && M.sel.kind === kind && M.sel.src === src) ? null : { kind, src };
+  drawEditor();
+}
+
+function clickTgt(col, ev) {
+  closeMenu();
+  if (M.sel) {
+    let kind = M.sel.kind;
+    if (kind === 'field' && LOOKUP_COLS.includes(col)) kind = 'lookup';
+    if (kind === 'field' && /_FLG$/.test(col)) kind = 'yn';
+    M.maps = M.maps.filter(m => m.col !== col);
+    M.maps.push({ col, kind, src: M.sel.src });
+    M.sel = null; M.dirty = true; drawEditor(); return;
+  }
+  const m = M.maps.find(m => m.col === col);
+  if (!m) { msg('Erst links eine Quelle anklicken, dann dieses Ziel'); return; }
+  const menu = document.createElement('div'); menu.className = 'menu'; menu.id = 'mmenu';
+  const opts = [];
+  if (m.kind !== 'const' && m.kind !== 'raw') {
+    opts.push(['Direkt übernehmen', () => m.kind = 'field']);
+    opts.push(['true/false → Y/N', () => m.kind = 'yn']);
+    if (LOOKUP_COLS.includes(col)) opts.push(['Lookup Firma (externe ID → CRM-ID)', () => m.kind = 'lookup']);
+  }
+  opts.push(['Linie entfernen', () => { M.maps = M.maps.filter(x => x !== m); }]);
+  menu.innerHTML = '<div class="t">' + esc(col === '_EXT_ID' ? 'Externe ID' : col) + ' ← ' + esc(m.kind === 'raw' ? 'Ausdruck' : m.src) + '</div>';
+  for (const [label, fn] of opts) {
+    const b = document.createElement('button'); b.textContent = label;
+    b.onclick = () => { fn(); closeMenu(); M.dirty = true; drawEditor(); };
+    menu.append(b);
+  }
+  menu.style.left = Math.min(ev.clientX, innerWidth - 260) + 'px';
+  menu.style.top = Math.min(ev.clientY, innerHeight - 160) + 'px';
+  document.body.append(menu);
+  setTimeout(() => document.addEventListener('click', closeMenu, { once: true }), 0);
+}
+function closeMenu() { const x = $('mmenu'); if (x) x.remove(); }
+
+function drawLines() {
+  const box = $('medit'), svg = $('mlines');
+  if (!box || !svg) return;
+  const b = box.getBoundingClientRect();
+  svg.setAttribute('width', b.width); svg.setAttribute('height', b.height);
+  let h = '';
+  for (const m of M.maps) {
+    const sk = m.kind === 'const' ? 'c:' + m.src : m.kind === 'raw' ? 'r:' + m.col : 'f:' + m.src;
+    const s = [...box.querySelectorAll('[data-s]')].find(p => p.dataset.s === sk);
+    const t = [...box.querySelectorAll('[data-t]')].find(p => p.dataset.t === m.col);
+    if (!s || !t) continue;
+    const a = s.getBoundingClientRect(), c = t.getBoundingClientRect();
+    const x1 = a.right - b.left + 4, y1 = a.top + a.height / 2 - b.top;
+    const x2 = c.left - b.left - 6, y2 = c.top + c.height / 2 - b.top;
+    const mx = (x1 + x2) / 2;
+    const col = m.kind === 'const' ? '#8F877E' : '#E8A33D';
+    h += '<path d="M' + x1 + ' ' + y1 + ' C' + mx + ' ' + y1 + ',' + mx + ' ' + y2 + ',' + x2 + ' ' + y2 + '" fill="none" stroke="' + col + '" stroke-width="2"' + (m.kind === 'const' ? ' stroke-dasharray="5 4"' : '') + '/>';
+    h += '<path d="M' + (x2 - 7) + ' ' + (y2 - 4) + ' L' + (x2 + 1) + ' ' + y2 + ' L' + (x2 - 7) + ' ' + (y2 + 4) + 'z" fill="' + col + '"/>';
+    const lab = srcLabel(m);
+    if (lab) h += '<text x="' + (x2 - 12) + '" y="' + (y2 - 7) + '" text-anchor="end" font-size="11" fill="#E8A33D" font-family="system-ui,sans-serif">' + esc(lab) + '</text>';
+  }
+  svg.innerHTML = h;
+}
+
+function jqExpr(m) {
+  if (m.kind === 'const') return JSON.stringify(m.src);
+  if (m.kind === 'yn') return '(if .' + m.src + ' == "true" then "Y" else "N" end)';
+  if (m.kind === 'raw') return m.src;
+  return '.' + m.src;
+}
+
+function applyMapping() {
+  const P = M.p;
+  for (const r of P.req) if (!M.maps.some(m => m.col === r)) { msg((r === '_EXT_ID' ? 'Die „Externe ID“' : 'Pflichtfeld ' + r) + ' ist nicht verbunden', 'err'); return; }
+  const lines = (localStorage.getItem('sourceCode') || '').split('\n');
+  let i = lines.findIndex(l => /description:\s*"?Mapping/.test(l));
+  if (i < 0) { msg('Mapping-Schritt nicht gefunden', 'err'); return; }
+  while (i < lines.length && !/^\s*\{\s*$/.test(lines[i])) i++;
+  let j = i + 1;
+  const ind = /^(\s*)/.exec(lines[i])[1];
+  while (j < lines.length && lines[j] !== ind + '}') j++;
+  if (i >= lines.length || j >= lines.length) { msg('Mapping-Block im YAML nicht erkennbar', 'err'); return; }
+  const order = P.targets;
+  const sorted = [...M.maps].sort((a, b) => (order.indexOf(a.col) + 1 || 999) - (order.indexOf(b.col) + 1 || 999));
+  const body = sorted.map((m, k) => ind + '  "' + (m.kind === 'lookup' ? '_LOOKUP:S_ORG_EXT:' + m.col : m.col) + '": ' + jqExpr(m) + (k < sorted.length - 1 ? ',' : ''));
+  lines.splice(i + 1, j - i - 1, ...body);
+  // Feldliste der ServiceNow-Abfrage um neue Felder ergaenzen
+  const used = new Set(M.maps.filter(m => m.kind !== 'const' && m.kind !== 'raw').map(m => m.src));
+  const joined = lines.join('\n');
+  const addSoql = (txt) => txt.replace(/(soql:\s*")([^"]+)"/, (all, pre, q) => {
+    const info = soqlInfo(txt); if (!info) return all;
+    const missing = [...used].filter(u => !info.fields.includes(u));
+    if (!missing.length) return all;
+    const at = q.search(new RegExp('\\s+FROM\\s+' + info.object + '(\\s|$)'));
+    return at < 0 ? all : pre + q.slice(0, at) + ', ' + missing.join(', ') + q.slice(at) + '"';
+  });
+  const y = P.fieldsParam === 'soql' ? addSoql(joined) : !P.fieldsParam ? joined : joined.replace(/(fields:\s*["']?)([\w,]+)/, (all, pre, list) => {
+    const have = list.split(',');
+    for (const u of used) if (!have.includes(u)) have.push(u);
+    return pre + have.join(',');
+  });
+  M.dirty = false;
+  loadIntoKaoto(y);
+  setTimeout(renderMap, 600);
+  msg('Mapping in den Flow übernommen – jetzt „Speichern & deployen“', 'ok');
+}
+
+function showTab(t) {
+  tab = t;
+  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
+  $('map').classList.toggle('show', t === 'map');
+  $('lic').classList.toggle('show', t === 'lic');
+  $('ai').classList.toggle('show', t === 'ai');
+  if (t === 'ai') loadInsights();
+  $('outp').classList.toggle('show', t === 'status' || t === 'logs');
+  $('fltProbL').style.display = t === 'logs' ? '' : 'none';
+  $('resbox').classList.toggle('show', t === 'status');
+  if (t === 'map') renderMap();
+  else if (t !== 'design') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
+}
+$('vDesign').onclick = () => showTab('design');
+$('vAi').onclick = () => showTab('ai');
+$('licBtn').onclick = () => showTab('lic');
+$('vMap').onclick = () => showTab('map');
+$('vStatus').onclick = () => showTab('status');
+$('vLogs').onclick = () => showTab('logs');
+window.addEventListener('storage', e => { if (e.key === 'sourceCode' && tab === 'map' && !M.dirty) renderMap(); });
+window.addEventListener('resize', () => { if (tab === 'map') drawLines(); });
+
+$('restartBtn').onclick = async () => {
+  if (!confirm('Camel-Laufzeit neu starten? Alle Flows sind dabei ca. 20 Sekunden lang angehalten.')) return;
+  try { msg(await api('/runtime/restart', { method:'POST' }), 'ok'); showTab('status'); $('out').textContent = 'Laufzeit startet neu …'; setTimeout(refreshOut, 20000); }
+  catch (e) { msg(e.message, 'err'); }
+};
+
+
+// ---------- Betriebsassistent ----------
+const ST = { error: 'Störung', warn: 'Auffällig', ok: 'OK', idle: 'ruhig' };
+let lastInsights = null;
+async function loadInsights(quiet) {
+  try {
+    const d = JSON.parse(await api('/insights'));
+    lastInsights = d; updateBadge(d);
+    if (tab !== 'ai') return;
+    $('aiMeta').textContent = 'Auswertung der letzten ' + d.window + ' Minuten, Stand ' + d.generated;
+    $('aiSummary').disabled = !d.aiAvailable; $('aiSummary').style.opacity = d.aiAvailable ? '' : '.45';
+    $('aiSummary').title = d.aiAvailable ? 'Fasst die Lage per KI zusammen (Claude API)' : 'Nicht eingerichtet: BF_AI_KEY in ~/beyondflow/config/secrets.env eintragen';
+    const order = { error: 0, warn: 1, ok: 2, idle: 3 };
+    const fs = [...d.findings].sort((a, b) => order[a.status] - order[b.status]);
+    $('aiCards').innerHTML = fs.map((f, i) => `
+      <div class="card ${f.status}">
+        <div class="hd">${esc(f.name)}<span class="st ${f.status}">${ST[f.status]}</span></div>
+        <h4>${esc(f.title)}</h4>
+        <p>${esc(f.summary)}</p>
+        ${f.recommendations.length ? '<ul>' + f.recommendations.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>' : ''}
+        ${f.evidence.length ? '<details><summary>Nachweis aus dem Log (' + f.evidence.length + ')</summary><pre class="ev">' + f.evidence.map(esc).join('\n') + '</pre></details>' : ''}
+        ${f.actions.length ? '<div class="acts">' + f.actions.map((a, k) => `<button class="btn ${/prüfen/.test(a.label) ? 'primary' : 'ghost'}" data-f="${i}" data-a="${k}">${esc(a.label)}</button>`).join('') + '</div>' : ''}
+        <div class="res" id="res${i}"></div>
+      </div>`).join('');
+    $('aiCards').querySelectorAll('[data-a]').forEach(b => b.onclick = () => runAction(fs[+b.dataset.f].actions[+b.dataset.a], b.dataset.f, b));
+  } catch (e) { if (!quiet) $('aiCards').innerHTML = '<p class="res bad">Analyse nicht möglich: ' + esc(e.message) + '</p>'; }
+}
+function updateBadge(d) {
+  const err = d.findings.filter(f => f.status === 'error').length, warn = d.findings.filter(f => f.status === 'warn').length;
+  const b = $('aiBadge');
+  b.textContent = err || warn; b.className = 'badge' + (err ? ' show' : warn ? ' show warn' : '');
+  b.title = err + ' Störung(en), ' + warn + ' Auffälligkeit(en)';
+}
+async function runAction(a, idx, btn) {
+  if (a.confirm && !confirm(a.confirm)) return;
+  const out = $('res' + idx); out.className = 'res'; out.textContent = a.label + ' …'; btn.disabled = true;
+  try {
+    const r = await fetch(a.url, { method: a.method }); const t = await r.text();
+    let ok = r.ok, m = t;
+    try { const j = JSON.parse(t); ok = ok && j.ok !== false; m = j.message + (j.ms ? ' (' + j.ms + ' ms)' : ''); } catch (_) {}
+    out.className = 'res ' + (ok ? 'ok' : 'bad'); out.textContent = (ok ? '✓ ' : '✗ ') + m;
+    if (/restart|pause|resume|start/.test(a.url)) { refreshList(); setTimeout(() => loadInsights(true), 25000); }
+  } catch (e) { out.className = 'res bad'; out.textContent = '✗ ' + e.message; }
+  btn.disabled = false;
+}
+$('aiRefresh').onclick = () => { $('aiText').innerHTML = ''; loadInsights(); };
+$('aiSummary').onclick = async () => {
+  $('aiText').innerHTML = '<div class="aibox"><div class="lbl">KI-Zusammenfassung</div>analysiere …</div>';
+  try {
+    const j = JSON.parse(await api('/insights/ai', { method: 'POST' }));
+    const html = esc(j.message).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    $('aiText').innerHTML = '<div class="aibox"><div class="lbl">KI-Zusammenfassung' + (j.ms ? ' · ' + (j.ms / 1000).toFixed(1) + ' s' : '') + '</div>' + html + '</div>';
+  } catch (e) { $('aiText').innerHTML = '<div class="aibox">' + esc(e.message) + '</div>'; }
+};
+setInterval(() => loadInsights(true), 60000);
+loadInsights(true);
+
+api('/version').then(v => { $('ver').textContent = 'BeyondFlow ' + v; $('ver').title = 'Eingespielte Version'; }).catch(() => {});
+refreshList(); refreshOut();
+setInterval(refreshOut, 10000);
+setInterval(refreshList, 30000);
+</script>
+</body>
+</html>

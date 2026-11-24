@@ -1,0 +1,17 @@
+[Unit]
+Description=BeyondFlow Ereignis-Laufzeit (Salesforce Change Data Capture)
+After=network-online.target beyondflow-runtime.service
+
+[Service]
+WorkingDirectory=%h/beyondflow/events
+EnvironmentFile=%h/beyondflow/config/secrets.env
+Environment=PATH=%h/.jbang/bin:/usr/local/bin:/usr/bin:/bin
+# protobuf 4.x: von camel-salesforce 4.22 benoetigt, sonst ClassNotFoundException RuntimeVersion
+ExecStart=%h/.jbang/bin/camel run --source-dir=%h/beyondflow/events --properties=%h/beyondflow/config/events.properties --name=beyondflow-events --dep=com.google.protobuf:protobuf-java:4.34.2
+Restart=always
+RestartSec=60
+StandardOutput=append:%h/beyondflow/logs/runtime.log
+StandardError=append:%h/beyondflow/logs/runtime.log
+
+[Install]
+WantedBy=default.target

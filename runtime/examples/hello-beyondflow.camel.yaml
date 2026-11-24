@@ -1,0 +1,13 @@
+- route:
+    id: hello-beyondflow
+    description: Hallo aus BeyondFlow
+    from:
+      uri: timer:beyondflow
+      parameters:
+        period: "10000"
+      steps:
+        - setBody:
+            simple:
+              expression: Hallo aus BeyondFlow – ${date:now:HH:mm:ss}
+        - log:
+            message: ${body}

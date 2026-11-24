@@ -1,0 +1,19 @@
+- route:
+    id: inbox-triggers
+    description: "Ereignis-Eingang (nur 127.0.0.1:8091): stoesst einen Abgleich sofort an, z. B. aus der Ereignis-Laufzeit"
+    from:
+      uri: "platform-http:/trigger/sf-opp-sync"
+      parameters:
+        httpMethodRestrict: POST
+      steps:
+        - setBody:
+            constant: ""
+        - to:
+            uri: seda:sf-opp-sync
+            parameters:
+              waitForTaskToComplete: Never
+        - setHeader:
+            name: CamelHttpResponseCode
+            constant: 202
+        - setBody:
+            constant: "Abgleich angestossen"

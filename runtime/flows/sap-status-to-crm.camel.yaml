@@ -1,0 +1,51 @@
+- route:
+    id: sap-status-to-crm
+    description: "SAP Auftragsstatus -> BeyondCRM ERP-Status"
+    from:
+      uri: timer:sap-status-to-crm
+      parameters:
+        period: "600000"
+        delay: "60000"
+      steps:
+        - to:
+            uri: "sql:select order_num, erp_order_num, nvl(erp_status_cd, '-') as erp_status_cd from siebel.cx_bf_order_v where erp_order_num is not null and length(erp_order_num) <= 10 and translate(erp_order_num, 'x0123456789', 'x') is null and nvl(erp_status_cd, '-') not in ('Fakturiert', 'Storniert', 'Fehler')"
+            parameters:
+              dataSource: "#crmdb"
+        - split:
+            simple: "${body}"
+            steps:
+              - setProperty:
+                  name: orderNum
+                  simple: "${body[ORDER_NUM]}"
+              - setProperty:
+                  name: sapVbeln
+                  simple: "${body[ERP_ORDER_NUM]}"
+              - setProperty:
+                  name: oldStatus
+                  simple: "${body[ERP_STATUS_CD]}"
+              - to:
+                  uri: kamelet:sap-salesorder-status
+              - filter:
+                  description: "Auftrag in SAP gefunden"
+                  jq:
+                    expression: ".ok and .found"
+                  steps:
+                    - setProperty:
+                        name: newStatus
+                        jq:
+                          expression: .status
+                          resultType: java.lang.String
+                    - filter:
+                        description: "Status geaendert"
+                        simple: "${exchangeProperty.newStatus} != ${exchangeProperty.oldStatus}"
+                        steps:
+                          - to:
+                              uri: "sql-stored:siebel.cx_bf_sap.set_erp_status(VARCHAR ${exchangeProperty.sapVbeln},VARCHAR ${exchangeProperty.newStatus},OUT VARCHAR result)"
+                              parameters:
+                                dataSource: "#crmdb"
+                          - log:
+                              message: "Auftrag ${exchangeProperty.orderNum} (SAP ${exchangeProperty.sapVbeln}): ERP-Status ${exchangeProperty.oldStatus} -> ${exchangeProperty.newStatus}"
+                          - to:
+                              uri: seda:crm-orders-to-sf-sync
+                              parameters:
+                                waitForTaskToComplete: Never

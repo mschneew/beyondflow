@@ -1,0 +1,6 @@
+# BeyondFlow Ereignis-Laufzeit – erzeugt von install/install.sh (nicht von Hand aendern)
+camel.component.salesforce.authenticationType=CLIENT_CREDENTIALS
+camel.component.salesforce.clientId={{env:BF_SF_CLIENT_ID}}
+camel.component.salesforce.clientSecret={{env:BF_SF_CLIENT_SECRET}}
+camel.component.salesforce.loginUrl=@BF_SF_URL@
+camel.component.salesforce.apiVersion=62.0

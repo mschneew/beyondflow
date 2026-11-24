@@ -1,0 +1,13 @@
+[Unit]
+Description=BeyondFlow API (Studio-Backend)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/beyondflow
+Environment=PATH=%h/.jbang/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/java %h/beyondflow/api/BeyondFlowApi.java
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

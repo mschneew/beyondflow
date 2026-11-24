@@ -1,0 +1,48 @@
+- route:
+    id: sf-accounts-to-crm
+    description: "Salesforce Account -> BeyondCRM Account"
+    from:
+      uri: timer:sf-accounts-to-crm
+      parameters:
+        period: "300000"
+        delay: "15000"
+      steps:
+        - to:
+            uri: kamelet:salesforce-query
+            parameters:
+              soql: "SELECT Id, Name, AccountNumber, BillingCity, Phone, Website FROM Account ORDER BY SystemModstamp DESC LIMIT 200"
+        - split:
+            jq:
+              expression: .records
+            steps:
+              - setHeader:
+                  name: bfLabel
+                  jq:
+                    expression: .Name
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping Salesforce Account -> CRM Account (S_ORG_EXT)"
+                  jq:
+                    expression: |-
+                      {
+                        "_EXT_ID": .Id,
+                        "NAME": .Name,
+                        "LOC": .BillingCity,
+                        "OU_NUM": .AccountNumber,
+                        "MAIN_PH_NUM": .Phone,
+                        "URL": .Website
+                      }
+              - convertBodyTo:
+                  type: java.lang.String
+              - setHeader:
+                  name: bfEntity
+                  constant: Account
+              - to:
+                  uri: "sql-stored:siebel.cx_bf_sfdc.sync_in(VARCHAR ${header.bfEntity},VARCHAR ${body},OUT VARCHAR crmRowId,OUT VARCHAR crmAction)"
+                  parameters:
+                    dataSource: "#crmdb"
+              - filter:
+                  simple: "${body[crmAction]} != 'UNVERAENDERT'"
+                  steps:
+                    - log:
+                        message: "Salesforce-Account ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]}"

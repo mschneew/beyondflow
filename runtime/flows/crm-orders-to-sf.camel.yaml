@@ -1,0 +1,75 @@
+- route:
+    id: crm-orders-to-sf
+    description: "BeyondCRM Auftragsstatus (SAP-Nummer, ERP-Status) -> Salesforce Opportunity (Sicherheitsnetz alle 10 Min.)"
+    from:
+      uri: timer:crm-orders-to-sf
+      parameters:
+        period: "600000"
+        delay: "110000"
+      steps:
+        - to:
+            uri: seda:crm-orders-to-sf-sync
+- route:
+    id: crm-orders-to-sf-sync
+    description: "Abgleich Auftragsstatus -> Salesforce (seriell, ausgeloest durch Timer, SAP-Anlage oder SAP-Statuswechsel)"
+    from:
+      uri: seda:crm-orders-to-sf-sync
+      parameters:
+        concurrentConsumers: "1"
+      steps:
+        - to:
+            uri: "sql-stored:siebel.cx_bf_sfdc.orders_out(OUT VARCHAR orders)"
+            parameters:
+              dataSource: "#crmdb"
+        - setBody:
+            simple: "${body[orders]}"
+        - split:
+            description: "Liste als Ganzes uebergeben (auch bei genau einem Eintrag)"
+            jq:
+              expression: "."
+            steps:
+              - setProperty:
+                  name: rowId
+                  jq:
+                    expression: .rowId
+                    resultType: java.lang.String
+              - setProperty:
+                  name: hash
+                  jq:
+                    expression: .hash
+                    resultType: java.lang.String
+              - setProperty:
+                  name: label
+                  jq:
+                    expression: .ORDER_NUM
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping BeyondCRM Auftrag -> Salesforce Opportunity"
+                  jq:
+                    expression: |-
+                      {
+                        "Id": .sfId,
+                        "BeyondCRM_Auftrag__c": .ORDER_NUM,
+                        "SAP_Auftrag__c": .ERP_ORDER_NUM,
+                        "ERP_Status__c": .ERP_STATUS_CD
+                      }
+              - to:
+                  uri: kamelet:salesforce-upsert
+                  parameters:
+                    sobject: Opportunity
+              - choice:
+                  when:
+                    - jq:
+                        expression: .ok
+                      steps:
+                        - to:
+                            uri: "sql-stored:siebel.cx_bf_sfdc.order_out_done(VARCHAR ${exchangeProperty.rowId},VARCHAR ${exchangeProperty.hash},OUT VARCHAR result)"
+                            parameters:
+                              dataSource: "#crmdb"
+                        - log:
+                            message: "Auftrag ${exchangeProperty.label} -> Salesforce-Opportunity aktualisiert"
+                  otherwise:
+                    steps:
+                      - log:
+                          loggingLevel: WARN
+                          message: "Auftrag ${exchangeProperty.label} -> Salesforce fehlgeschlagen: ${body}"

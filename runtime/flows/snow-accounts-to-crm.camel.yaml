@@ -1,0 +1,44 @@
+- route:
+    id: snow-accounts-to-crm
+    description: "ServiceNow customer_account -> BeyondCRM Account"
+    from:
+      uri: timer:snow-accounts
+      parameters:
+        period: "300000"
+        delay: "15000"
+      steps:
+        - to:
+            uri: kamelet:servicenow-query
+            parameters:
+              table: customer_account
+              fields: sys_id,name,number,city,phone,website
+        - split:
+            jq:
+              expression: .result
+            steps:
+              - setHeader:
+                  name: bfLabel
+                  jq:
+                    expression: .name
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping ServiceNow customer_account -> CRM Account (S_ORG_EXT)"
+                  jq:
+                    expression: |-
+                      {
+                        "_EXT_ID": .sys_id,
+                        "NAME": .name,
+                        "OU_NUM": .number,
+                        "LOC": .city,
+                        "MAIN_PH_NUM": .phone,
+                        "URL": .website,
+                        "OU_TYPE_CD": "Kunde",
+                        "CUST_STAT_CD": "Kunde"
+                      }
+              - to:
+                  uri: kamelet:beyondcrm-upsert
+                  parameters:
+                    entity: Account
+                    system: SNOW
+              - log:
+                  message: "Account ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]}"

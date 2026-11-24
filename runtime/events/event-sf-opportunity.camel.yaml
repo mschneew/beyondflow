@@ -1,0 +1,32 @@
+- route:
+    id: event-sf-opportunity
+    description: "Ereignis: Salesforce meldet eine geaenderte Opportunity (Change Data Capture) -> sofortiger Abgleich in der Hauptlaufzeit"
+    from:
+      uri: salesforce:subscribe:/data/OpportunityChangeEvent
+      parameters:
+        defaultReplayId: "-1"
+      steps:
+        - filter:
+            description: "Nur neue Opportunities oder geaenderte Phase"
+            simple: "${body[ChangeEventHeader][changeType]} == 'CREATE' || ${body[ChangeEventHeader][changedFields]} contains 'StageName'"
+            steps:
+              - log:
+                  message: "Salesforce-Ereignis: Opportunity ${body[ChangeEventHeader][recordIds]} (${body[ChangeEventHeader][changeType]}, Phase ${body[StageName]}) -> Abgleich"
+              - removeHeaders:
+                  pattern: "*"
+              - setBody:
+                  constant: ""
+              - setHeader:
+                  name: CamelHttpMethod
+                  constant: POST
+              - to:
+                  uri: "http://127.0.0.1:8091/trigger/sf-opp-sync"
+                  parameters:
+                    throwExceptionOnFailure: "false"
+                    connectionRequestTimeout: "5000"
+              - filter:
+                  simple: "${header.CamelHttpResponseCode} != 202"
+                  steps:
+                    - log:
+                        loggingLevel: WARN
+                        message: "Ereignis-Eingang der Hauptlaufzeit antwortet nicht (HTTP ${header.CamelHttpResponseCode}) - der Timer holt die Opportunity spaetestens in 15 Min."

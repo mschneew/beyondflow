@@ -1,0 +1,169 @@
+- routeTemplate:
+    id: salesforce-token
+    description: "Salesforce-Konnektor (intern): holt ein Zugriffstoken per OAuth Client Credentials und legt es in den Properties sfToken und sfInstance ab"
+    from:
+      uri: kamelet:source
+      steps:
+        - setProperty:
+            name: sfBodyIn
+            simple: "${body}"
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: CamelHttpMethod
+            constant: POST
+        - setHeader:
+            name: Content-Type
+            constant: application/x-www-form-urlencoded
+        - setBody:
+            constant: "grant_type=client_credentials&client_id={{env:BF_SF_CLIENT_ID}}&client_secret={{env:BF_SF_CLIENT_SECRET}}"
+        - to:
+            uri: "{{bf.sf.url}}/services/oauth2/token"
+            parameters:
+              throwExceptionOnFailure: "false"
+        - convertBodyTo:
+            type: java.lang.String
+        - filter:
+            description: "Anmeldung fehlgeschlagen"
+            simple: "${header.CamelHttpResponseCode} >= 300"
+            steps:
+              - throwException:
+                  exceptionType: java.lang.IllegalStateException
+                  message: "Salesforce-Anmeldung fehlgeschlagen (HTTP ${header.CamelHttpResponseCode}): ${body}"
+        - setProperty:
+            name: sfToken
+            jq:
+              expression: .access_token
+              resultType: java.lang.String
+        - setProperty:
+            name: sfInstance
+            jq:
+              expression: .instance_url
+              resultType: java.lang.String
+        - setBody:
+            simple: "${exchangeProperty.sfBodyIn}"
+- routeTemplate:
+    id: salesforce-query
+    description: "Salesforce-Konnektor: fuehrt eine SOQL-Abfrage aus (REST API). Ergebnis: JSON mit records[]"
+    parameters:
+      - name: soql
+        description: "SOQL-Abfrage, z. B. SELECT Id, Name FROM Account"
+    from:
+      uri: kamelet:source
+      steps:
+        - to:
+            uri: kamelet:salesforce-token
+        - setBody:
+            simple: '{"q": "{{soql}}"}'
+        - setHeader:
+            name: CamelHttpQuery
+            jq:
+              expression: '"q=" + (.q | @uri)'
+              resultType: java.lang.String
+        - setHeader:
+            name: CamelHttpMethod
+            constant: GET
+        - setHeader:
+            name: Authorization
+            simple: "Bearer ${exchangeProperty.sfToken}"
+        - setHeader:
+            name: Accept
+            constant: application/json
+        - setBody:
+            constant: ""
+        - toD:
+            uri: "${exchangeProperty.sfInstance}/services/data/v62.0/query"
+            parameters:
+              throwExceptionOnFailure: "false"
+        - convertBodyTo:
+            type: java.lang.String
+        - filter:
+            description: "HTTP-Fehler von Salesforce"
+            simple: "${header.CamelHttpResponseCode} >= 300"
+            steps:
+              - log:
+                  loggingLevel: WARN
+                  message: "Salesforce-Abfrage: HTTP ${header.CamelHttpResponseCode} - ${body}"
+              - setBody:
+                  constant: '{"records":[]}'
+- routeTemplate:
+    id: salesforce-upsert
+    description: "Salesforce-Konnektor: legt einen Datensatz an (ohne Id) oder aktualisiert ihn (mit Id). Antwort: ok, id, created, message"
+    parameters:
+      - name: sobject
+        description: "Salesforce-Objekt, z. B. Account oder Opportunity"
+    from:
+      uri: kamelet:source
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setProperty:
+            name: sfId
+            jq:
+              expression: '.Id // ""'
+              resultType: java.lang.String
+        - setBody:
+            jq:
+              expression: "del(.Id, .attributes)"
+        - convertBodyTo:
+            type: java.lang.String
+        - filter:
+            description: "Token nur holen, wenn noch keins da ist"
+            simple: "${exchangeProperty.sfToken} == null"
+            steps:
+              - to:
+                  uri: kamelet:salesforce-token
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Authorization
+            simple: "Bearer ${exchangeProperty.sfToken}"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - choice:
+            when:
+              - description: "Neu anlegen"
+                simple: "${exchangeProperty.sfId} == ''"
+                steps:
+                  - setHeader:
+                      name: CamelHttpMethod
+                      constant: POST
+                  - toD:
+                      uri: "${exchangeProperty.sfInstance}/services/data/v62.0/sobjects/{{sobject}}"
+                      parameters:
+                        throwExceptionOnFailure: "false"
+            otherwise:
+              steps:
+                - setHeader:
+                    name: CamelHttpMethod
+                    constant: PATCH
+                - toD:
+                    uri: "${exchangeProperty.sfInstance}/services/data/v62.0/sobjects/{{sobject}}/${exchangeProperty.sfId}"
+                    parameters:
+                      throwExceptionOnFailure: "false"
+        - convertBodyTo:
+            type: java.lang.String
+        - choice:
+            when:
+              - simple: "${header.CamelHttpResponseCode} == 201"
+                steps:
+                  - setBody:
+                      jq:
+                        expression: '{"ok": true, "created": true, "id": .id, "message": "angelegt"}'
+              - simple: "${header.CamelHttpResponseCode} == 204"
+                steps:
+                  - setBody:
+                      simple: '{"ok": true, "created": false, "id": "${exchangeProperty.sfId}", "message": "aktualisiert"}'
+            otherwise:
+              steps:
+                - setProperty:
+                    name: sfError
+                    simple: "HTTP ${header.CamelHttpResponseCode}: ${body}"
+                - setBody:
+                    constant: '{"ok": false}'
+                - setBody:
+                    jq:
+                      expression: '. + {"message": property("sfError")}'
+        - convertBodyTo:
+            type: java.lang.String

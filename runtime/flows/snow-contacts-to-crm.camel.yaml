@@ -1,0 +1,46 @@
+- route:
+    id: snow-contacts-to-crm
+    description: "ServiceNow customer_contact -> BeyondCRM Contact"
+    from:
+      uri: timer:snow-contacts
+      parameters:
+        period: "300000"
+        delay: "45000"
+      steps:
+        - to:
+            uri: kamelet:servicenow-query
+            parameters:
+              table: customer_contact
+              fields: sys_id,first_name,last_name,title,email,phone,mobile_phone,account,active
+        - split:
+            jq:
+              expression: .result
+            steps:
+              - setHeader:
+                  name: bfLabel
+                  jq:
+                    expression: '(.first_name + " " + .last_name)'
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping ServiceNow customer_contact -> CRM Contact (S_CONTACT)"
+                  jq:
+                    expression: |-
+                      {
+                        "_EXT_ID": .sys_id,
+                        "FST_NAME": .first_name,
+                        "LAST_NAME": .last_name,
+                        "JOB_TITLE": .title,
+                        "EMAIL_ADDR": .email,
+                        "WORK_PH_NUM": .phone,
+                        "CELL_PH_NUM": .mobile_phone,
+                        "_LOOKUP:S_ORG_EXT:PR_DEPT_OU_ID": .account,
+                        "CONSENT_STAT_CD": "Unbekannt",
+                        "ACTIVE_FLG": (if .active == "true" then "Y" else "N" end)
+                      }
+              - to:
+                  uri: kamelet:beyondcrm-upsert
+                  parameters:
+                    entity: Contact
+                    system: SNOW
+              - log:
+                  message: "Kontakt ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]}"

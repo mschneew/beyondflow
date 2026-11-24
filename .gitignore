@@ -1,0 +1,11 @@
+# Geheimnisse und Kundendaten gehoeren nie ins Repository
+secrets.env
+*.env
+!config/secrets.env.example
+Wallet_*.zip
+wallet/
+*.key
+*.pem
+beyondflow.conf
+sapjco3.jar
+libsapjco3.so

@@ -1,0 +1,16 @@
+[Unit]
+Description=BeyondFlow Laufzeit (Apache Camel)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/beyondflow/flows
+EnvironmentFile=%h/beyondflow/config/secrets.env
+Environment=PATH=%h/.jbang/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.jbang/bin/camel run --source-dir=%h/beyondflow/flows --properties=%h/beyondflow/config/application.properties --port=8091 --dep=com.oracle.database.jdbc:ojdbc11:23.6.0.24.10,com.oracle.database.security:oraclepki:23.6.0.24.10,org.apache.commons:commons-dbcp2:2.12.0
+Restart=always
+RestartSec=10
+StandardOutput=append:%h/beyondflow/logs/runtime.log
+StandardError=append:%h/beyondflow/logs/runtime.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,13 @@
+# BeyondFlow Hauptlaufzeit – erzeugt von install/install.sh aus beyondflow.conf (nicht von Hand aendern)
+camel.beans.crmdb=#class:org.apache.commons.dbcp2.BasicDataSource
+camel.beans.crmdb.driverClassName=oracle.jdbc.OracleDriver
+camel.beans.crmdb.url=jdbc:oracle:thin:@@BF_DB_TNS@?TNS_ADMIN=@BF_HOME@/wallet
+camel.beans.crmdb.username=@BF_DB_USER@
+camel.beans.crmdb.password={{env:BF_CRM_DB_PASSWORD}}
+bf.sap.gateway=@BF_SAP_GATEWAY@
+bf.sf.url=@BF_SF_URL@
+bf.snow.instance=@BF_SNOW_INSTANCE@
+# Ereignis-Eingang nur lokal
+camel.server.enabled=true
+camel.server.host=127.0.0.1
+camel.server.port=8091

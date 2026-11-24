@@ -1,0 +1,77 @@
+- route:
+    id: crm-accounts-to-sf
+    description: "BeyondCRM Account -> Salesforce Account (nur geaenderte)"
+    from:
+      uri: timer:crm-accounts-to-sf
+      parameters:
+        period: "300000"
+        delay: "75000"
+      steps:
+        - to:
+            uri: "sql-stored:siebel.cx_bf_sfdc.accounts_out(OUT VARCHAR accounts)"
+            parameters:
+              dataSource: "#crmdb"
+        - setBody:
+            simple: "${body[accounts]}"
+        - split:
+            description: "Liste als Ganzes uebergeben (auch bei genau einem Eintrag)"
+            jq:
+              expression: "."
+            steps:
+              - setProperty:
+                  name: rowId
+                  jq:
+                    expression: .rowId
+                    resultType: java.lang.String
+              - setProperty:
+                  name: hash
+                  jq:
+                    expression: .hash
+                    resultType: java.lang.String
+              - setProperty:
+                  name: label
+                  jq:
+                    expression: .NAME
+                    resultType: java.lang.String
+              - setBody:
+                  description: "Mapping BeyondCRM Account -> Salesforce Account"
+                  jq:
+                    expression: |-
+                      {
+                        "Id": .sfId,
+                        "Name": .NAME,
+                        "BillingCity": .LOC,
+                        "AccountNumber": .OU_NUM,
+                        "Phone": .MAIN_PH_NUM,
+                        "Website": .URL
+                      }
+              - to:
+                  uri: kamelet:salesforce-upsert
+                  parameters:
+                    sobject: Account
+              - choice:
+                  when:
+                    - jq:
+                        expression: .ok
+                      steps:
+                        - setProperty:
+                            name: sfId
+                            jq:
+                              expression: .id
+                              resultType: java.lang.String
+                        - setProperty:
+                            name: sfMsg
+                            jq:
+                              expression: .message
+                              resultType: java.lang.String
+                        - to:
+                            uri: "sql-stored:siebel.cx_bf_sfdc.account_out_done(VARCHAR ${exchangeProperty.rowId},VARCHAR ${exchangeProperty.sfId},VARCHAR ${exchangeProperty.hash},OUT VARCHAR result)"
+                            parameters:
+                              dataSource: "#crmdb"
+                        - log:
+                            message: "CRM-Account ${exchangeProperty.label} -> Salesforce ${exchangeProperty.sfMsg} ${exchangeProperty.sfId}"
+                  otherwise:
+                    steps:
+                      - log:
+                          loggingLevel: WARN
+                          message: "CRM-Account ${exchangeProperty.label} -> Salesforce fehlgeschlagen: ${body}"

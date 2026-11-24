@@ -1,0 +1,46 @@
+- routeTemplate:
+    id: sap-salesorder-create
+    description: "SAP-Konnektor: prueft und legt einen Kundenauftrag in SAP S/4HANA an (BAPI_SALESORDER_CREATEFROMDAT2 ueber das SAP-Gateway)"
+    from:
+      uri: kamelet:source
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: CamelHttpMethod
+            constant: POST
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - setHeader:
+            name: X-BF-Token
+            constant: "{{env:BF_SAP_TOKEN}}"
+        - to:
+            uri: "{{bf.sap.gateway}}/salesorder"
+            parameters:
+              connectionRequestTimeout: "10000"
+              responseTimeout: "120000"
+        - convertBodyTo:
+            type: java.lang.String
+- routeTemplate:
+    id: sap-salesorder-status
+    description: "SAP-Konnektor: liest den Status eines Kundenauftrags (BAPISDORDER_GETDETAILEDLIST ueber das SAP-Gateway). Auftragsnummer in der Exchange-Property sapVbeln."
+    from:
+      uri: kamelet:source
+      steps:
+        - removeHeaders:
+            pattern: "*"
+        - setBody:
+            constant: ""
+        - setHeader:
+            name: CamelHttpMethod
+            constant: GET
+        - setHeader:
+            name: X-BF-Token
+            constant: "{{env:BF_SAP_TOKEN}}"
+        - toD:
+            uri: "{{bf.sap.gateway}}/salesorder/${exchangeProperty.sapVbeln}/status"
+        - convertBodyTo:
+            type: java.lang.String

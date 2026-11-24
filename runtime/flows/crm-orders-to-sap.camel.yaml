@@ -1,0 +1,136 @@
+- route:
+    id: crm-orders-to-sap
+    description: "BeyondCRM Auftrag (Outbox) -> SAP S/4HANA Kundenauftrag"
+    from:
+      uri: timer:crm-orders-to-sap
+      parameters:
+        period: "5000"
+        delay: "20000"
+      steps:
+        - to:
+            uri: "sql-stored:siebel.cx_bf_sap.next_order(OUT VARCHAR orderJson)"
+            parameters:
+              dataSource: "#crmdb"
+        - setBody:
+            simple: "${body[orderJson]}"
+        - filter:
+            simple: "${body} != null"
+            steps:
+              - setProperty:
+                  name: outboxId
+                  jq:
+                    expression: .outboxId
+                    resultType: java.lang.String
+              - setProperty:
+                  name: orderNum
+                  jq:
+                    expression: '.orderNum // "?"'
+                    resultType: java.lang.String
+              - choice:
+                  when:
+                    - description: "Fachlich unvollstaendig"
+                      jq:
+                        expression: ".error != null"
+                      steps:
+                        - setProperty:
+                            name: msg
+                            jq:
+                              expression: .error
+                              resultType: java.lang.String
+                        - setProperty:
+                            name: technical
+                            constant: "N"
+                        - to:
+                            uri: "sql-stored:siebel.cx_sap_s4.complete_err(VARCHAR ${exchangeProperty.outboxId},VARCHAR ${exchangeProperty.msg},VARCHAR ${exchangeProperty.technical})"
+                            parameters:
+                              dataSource: "#crmdb"
+                        - log:
+                            loggingLevel: WARN
+                            message: "Auftrag ${exchangeProperty.orderNum}: ${exchangeProperty.msg}"
+                    - description: "Schon in SAP"
+                      jq:
+                        expression: ".erpOrderNum != null"
+                      steps:
+                        - setProperty:
+                            name: vbeln
+                            jq:
+                              expression: .erpOrderNum
+                              resultType: java.lang.String
+                        - setProperty:
+                            name: msg
+                            constant: "Bereits in SAP vorhanden"
+                        - to:
+                            uri: "sql-stored:siebel.cx_sap_s4.complete_ok(VARCHAR ${exchangeProperty.outboxId},VARCHAR ${exchangeProperty.vbeln},VARCHAR ${exchangeProperty.msg})"
+                            parameters:
+                              dataSource: "#crmdb"
+                        - log:
+                            message: "Auftrag ${exchangeProperty.orderNum}: bereits SAP ${exchangeProperty.vbeln}"
+                  otherwise:
+                    steps:
+                      - setBody:
+                          description: "Mapping BeyondCRM Auftrag -> SAP Kundenauftrag (BAPI_SALESORDER_CREATEFROMDAT2)"
+                          jq:
+                            expression: |-
+                              {
+                                "PURCH_NO_C": .orderNum,
+                                "SOLD_TO": .kunnr,
+                                "SALES_ORG": .vkorg,
+                                "DISTR_CHAN": .vtweg,
+                                "DIVISION": .spart,
+                                "DOC_TYPE": .auart,
+                                "ITEMS": [.items[] | {"ITM_NUMBER": (.ln * 10), "MATERIAL": .matnr, "REQ_QTY": .qty}]
+                              }
+                      - doTry:
+                          steps:
+                            - to:
+                                uri: kamelet:sap-salesorder-create
+                          doCatch:
+                            - exception:
+                                - java.lang.Exception
+                              steps:
+                                - setBody:
+                                    simple: '{"ok":false,"technical":true,"message":"SAP-Gateway nicht erreichbar"}'
+                                - log:
+                                    loggingLevel: WARN
+                                    message: "SAP-Gateway: ${exception.message}"
+                      - setProperty:
+                          name: vbeln
+                          jq:
+                            expression: '.vbeln // ""'
+                            resultType: java.lang.String
+                      - setProperty:
+                          name: msg
+                          jq:
+                            expression: '.message // ""'
+                            resultType: java.lang.String
+                      - setProperty:
+                          name: technical
+                          jq:
+                            expression: 'if .technical then "Y" else "N" end'
+                            resultType: java.lang.String
+                      - choice:
+                          when:
+                            - description: "SAP-Auftrag angelegt"
+                              jq:
+                                expression: ".ok"
+                              steps:
+                                - to:
+                                    uri: "sql-stored:siebel.cx_sap_s4.complete_ok(VARCHAR ${exchangeProperty.outboxId},VARCHAR ${exchangeProperty.vbeln},VARCHAR ${exchangeProperty.msg})"
+                                    parameters:
+                                      dataSource: "#crmdb"
+                                - log:
+                                    message: "Auftrag ${exchangeProperty.orderNum} -> SAP ${exchangeProperty.vbeln} (${exchangeProperty.msg})"
+                                - to:
+                                    description: "Rueckmeldung an Salesforce sofort anstossen"
+                                    uri: seda:crm-orders-to-sf-sync
+                                    parameters:
+                                      waitForTaskToComplete: Never
+                          otherwise:
+                            steps:
+                              - to:
+                                  uri: "sql-stored:siebel.cx_sap_s4.complete_err(VARCHAR ${exchangeProperty.outboxId},VARCHAR ${exchangeProperty.msg},VARCHAR ${exchangeProperty.technical})"
+                                  parameters:
+                                    dataSource: "#crmdb"
+                              - log:
+                                  loggingLevel: WARN
+                                  message: "Auftrag ${exchangeProperty.orderNum} -> SAP-Fehler (technisch: ${exchangeProperty.technical}): ${exchangeProperty.msg}"
