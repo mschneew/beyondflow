@@ -424,6 +424,7 @@ public class BeyondFlowApi {
                     try { Files.write(BASE.resolve("logs/events-actions.log"), (Instant.now() + "  replay " + t + "  " + r + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND); } catch (IOException ignore) {}
                     send(ex, 200, "application/json", r); return;
                 }
+                if (path.equals("/api/events/kafka")) { send(ex, 200, "application/json", kafkaView()); return; }
                 if (path.startsWith("/api/events/peek/")) {
                     String t = path.substring("/api/events/peek/".length());
                     if (!TOPIC.matcher(t).matches()) { send(ex, 400, "text/plain", "Topic ungueltig"); return; }
@@ -433,25 +434,11 @@ public class BeyondFlowApi {
             } catch (Exception e) { send(ex, 500, "application/json", Ops.res(false, "Fehler: " + e, 0)); }
         }
 
-        static String kx(int timeout, String sh) { return run(HOME.toFile(), timeout, "podman", "exec", "bf-kafka", "sh", "-c", sh); }
 
-        static Map<String, Long> offsets(String topicArg) {
-            Map<String, Long> m = new TreeMap<>();
-            for (String l : kx(40, K + "kafka-get-offsets.sh" + BS + topicArg + " 2>/dev/null").split("\n")) {
-                String[] f = l.trim().split(":");
-                if (f.length == 3 && !f[0].startsWith("__")) try { m.merge(f[0], Long.parseLong(f[2]), Long::sum); } catch (NumberFormatException ignore) {}
-            }
-            return m;
-        }
-
-        static String status() {
-            StringBuilder b = new StringBuilder("{");
-            String ps = run(HOME.toFile(), 10, "podman", "ps", "--filter", "name=^bf-kafka$", "--format", "{{.Status}}").trim();
-            boolean up = ps.startsWith("Up");
-            b.append("\"kafka\":{\"laeuft\":").append(up).append(",\"zustand\":").append(Ops.js(up ? ps : (ps.isEmpty() ? "nicht gestartet" : ps))).append("}");
-            b.append(",\"topics\":[");
-            if (up) {
-                Map<String, Long> end = offsets("");
+        // Topics mit Nachrichtenzahl, offenen Fehlern und Abnehmergruppen; end = Ende je Topic (fuer den Reiter Kafka)
+        static String topicsJson(Map<String, Long> end) {
+            StringBuilder b = new StringBuilder("[");
+                end.putAll(offsets(""));
                 // Abnehmergruppen: GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID
                 Map<String, List<String>> groups = new TreeMap<>();
                 for (String l : kx(40, K + "kafka-consumer-groups.sh" + BS + " --describe --all-groups 2>/dev/null").split("\n")) {
@@ -470,8 +457,26 @@ public class BeyondFlowApi {
                      .append(",\"offen\":").append(e.getKey().endsWith(".dlq") ? Math.max(0, e.getValue() - replayedUpTo(e.getKey())) : 0).append(",\"abnehmer\":[")
                      .append(String.join(",", groups.getOrDefault(e.getKey(), List.of()))).append("]}");
                 }
+                        return b.append("]").toString();
+        }
+
+        static String kx(int timeout, String sh) { return run(HOME.toFile(), timeout, "podman", "exec", "bf-kafka", "sh", "-c", sh); }
+
+        static Map<String, Long> offsets(String topicArg) {
+            Map<String, Long> m = new TreeMap<>();
+            for (String l : kx(40, K + "kafka-get-offsets.sh" + BS + topicArg + " 2>/dev/null").split("\n")) {
+                String[] f = l.trim().split(":");
+                if (f.length == 3 && !f[0].startsWith("__")) try { m.merge(f[0], Long.parseLong(f[2]), Long::sum); } catch (NumberFormatException ignore) {}
             }
-            b.append("]");
+            return m;
+        }
+
+        static String status() {
+            StringBuilder b = new StringBuilder("{");
+            String ps = run(HOME.toFile(), 10, "podman", "ps", "--filter", "name=^bf-kafka$", "--format", "{{.Status}}").trim();
+            boolean up = ps.startsWith("Up");
+            b.append("\"kafka\":{\"laeuft\":").append(up).append(",\"zustand\":").append(Ops.js(up ? ps : (ps.isEmpty() ? "nicht gestartet" : ps))).append("}");
+            b.append(",\"topics\":").append(up ? topicsJson(new TreeMap<>()) : "[]");
             // oeffentlicher Eingang
             String host = "";
             String name = "";
@@ -527,6 +532,87 @@ public class BeyondFlowApi {
                 return Ops.res(false, n + " eingespielt, Stand aber nicht gespeichert: " + e.getMessage(), System.currentTimeMillis() - t0);
             }
             return Ops.res(true, n + " Ereignis(se) erneut nach " + target + " eingespielt", System.currentTimeMillis() - t0);
+        }
+
+
+        // ---------- Reiter "Kafka": Dienste + Inhalt aller Topics (je die letzten 10 Ereignisse) ----------
+        static final String[] UNITS = { "beyondflow-kafka", "beyondflow-runtime", "beyondflow-events", "beyondflow-edge", "beyondflow-api",
+            "beyondflow-studio", "beyondflow-update.timer", "beyondflow-cert.timer" };
+        static final Map<String, Long> SEEN_END = new HashMap<>();
+        static final Map<String, String> SEEN_ITEMS = new HashMap<>();
+
+        static synchronized String kafkaView() {
+            long t0 = System.currentTimeMillis();
+            StringBuilder b = new StringBuilder("{\"dienste\":[");
+            // systemd-Benutzerdienste
+            List<String> cmd = new ArrayList<>(List.of("systemctl", "--user", "show", "-p", "Id", "-p", "ActiveState", "-p", "SubState", "-p", "ActiveEnterTimestamp", "-p", "Description"));
+            cmd.addAll(List.of(UNITS));
+            String out = run(HOME.toFile(), 15, cmd.toArray(new String[0]));
+            int n = 0;
+            for (String blk : out.split("\n\\s*\n")) {
+                Map<String, String> m = new HashMap<>();
+                for (String l : blk.split("\n")) { int i = l.indexOf('='); if (i > 0) m.put(l.substring(0, i), l.substring(i + 1).trim()); }
+                if (!m.containsKey("Id")) continue;
+                b.append(n++ > 0 ? "," : "").append("{\"dienst\":").append(Ops.js(m.get("Id"))).append(",\"beschreibung\":").append(Ops.js(m.getOrDefault("Description", "")))
+                 .append(",\"zustand\":").append(Ops.js(m.getOrDefault("ActiveState", "?"))).append(",\"detail\":").append(Ops.js(m.getOrDefault("SubState", "")))
+                 .append(",\"seit\":").append(Ops.js(m.getOrDefault("ActiveEnterTimestamp", ""))).append("}");
+            }
+            // SAP-Gateway (andere VM, ueber HTTP)
+            String[] g = SapGw.gwCall("GET", "/admin/status");
+            String gz = g[0].equals("200") ? (g[1].contains("\"paused\":true") ? "angehalten" : "active") : g[0].equals("0") ? "nicht erreichbar" : "HTTP " + g[0];
+            b.append(n > 0 ? "," : "").append("{\"dienst\":\"sap-gateway (sap-bridge)\",\"beschreibung\":\"SAP-Gateway auf der SAP-VM\",\"zustand\":").append(Ops.js(gz))
+             .append(",\"detail\":\"\",\"seit\":\"\"}");
+            b.append("]");
+            String ps = run(HOME.toFile(), 10, "podman", "ps", "--filter", "name=^bf-kafka$", "--format", "{{.Status}}").trim();
+            if (!ps.startsWith("Up")) return b.append(",\"topics\":[],\"kafka\":").append(Ops.js(ps.isEmpty() ? "nicht gestartet" : ps)).append("}").toString();
+            Map<String, Long> end = new TreeMap<>();
+            String topics = topicsJson(end);
+            // nur Topics neu lesen, deren Ende sich seit dem letzten Aufruf geaendert hat (parallel, ein Aufruf)
+            List<String> changed = new ArrayList<>();
+            for (Map.Entry<String, Long> e : end.entrySet()) if (!e.getValue().equals(SEEN_END.get(e.getKey()))) changed.add(e.getKey());
+            if (!changed.isEmpty()) {
+                StringBuilder sh = new StringBuilder();
+                for (String t : changed) {
+                    long e = end.get(t);
+                    if (e == 0) { SEEN_END.put(t, 0L); SEEN_ITEMS.put(t, "[]"); continue; }
+                    sh.append("( ").append(K).append("kafka-console-consumer.sh").append(BS).append(" --topic ").append(t).append(" --partition 0 --offset ").append(Math.max(0, e - 10))
+                      .append(" --max-messages ").append(Math.min(10, e)).append(" --timeout-ms 8000 --property print.timestamp=true --property print.key=true --property print.offset=true")
+                      .append(" > /tmp/bfv_").append(t).append(".txt 2>/dev/null ) & ");
+                }
+                if (sh.length() > 0) {
+                    sh.append("wait; for f in /tmp/bfv_*.txt; do echo \"@@TOPIC ${f#/tmp/bfv_}\"; cat \"$f\"; rm -f \"$f\"; done");
+                    String res = kx(60, sh.toString());
+                    for (String part : res.split("@@TOPIC ")) {
+                        int nl = part.indexOf('\n'); if (nl < 0) continue;
+                        String t = part.substring(0, nl).replaceAll("\\.txt$", "").trim();
+                        if (!end.containsKey(t)) continue;
+                        SEEN_ITEMS.put(t, items(part.substring(nl + 1)));
+                        SEEN_END.put(t, end.get(t));
+                    }
+                }
+            }
+            StringBuilder ev = new StringBuilder("{");
+            int i = 0;
+            for (String t : end.keySet()) ev.append(i++ > 0 ? "," : "").append(Ops.js(t)).append(":").append(SEEN_ITEMS.getOrDefault(t, "[]"));
+            ev.append("}");
+            return b.append(",\"kafka\":").append(Ops.js(ps)).append(",\"topics\":").append(topics).append(",\"ereignisse\":").append(ev)
+                    .append(",\"ms\":").append(System.currentTimeMillis() - t0).append(",\"zeit\":").append(Ops.js(Instant.now().toString().substring(11, 19))).append("}").toString();
+        }
+
+        // Ausgabe des Konsolen-Konsumenten -> JSON-Liste, neuestes zuerst (mehrzeilige Werte werden zusammengefuegt)
+        static String items(String out) {
+            List<String> recs = new ArrayList<>(), items = new ArrayList<>();
+            for (String l : out.split("\n")) {
+                if (l.startsWith("CreateTime:") || recs.isEmpty()) recs.add(l); else recs.set(recs.size() - 1, recs.get(recs.size() - 1) + " " + l.trim());
+            }
+            for (String l : recs) {
+                String[] f = l.split("\t", 4);
+                if (f.length < 4 || !f[0].startsWith("CreateTime:")) continue;
+                String zeit = "";
+                try { zeit = Instant.ofEpochMilli(Long.parseLong(f[0].substring(11))).toString(); } catch (NumberFormatException ignore) {}
+                items.add(0, "{\"zeit\":" + Ops.js(zeit) + ",\"offset\":" + Ops.js(f[1].replace("Offset:", "")) + ",\"schluessel\":" + Ops.js(f[2]) + ",\"wert\":" + Ops.js(Ops.clip(f[3], 2000)) + "}");
+            }
+            return "[" + String.join(",", items) + "]";
         }
 
         static String peek(String topic) {

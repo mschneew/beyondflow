@@ -66,6 +66,17 @@
   #evPeek table { border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; } #evPeek td, #evPeek th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
   #evPeek td.v { font-family:ui-monospace,monospace; word-break:break-all; } #evPeek { margin-top:16px; }
   .card .btn.sm { min-height:26px; padding:3px 10px; font-size:12px; margin-top:6px; }
+  .kah { font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:18px 0 8px; }
+  .kasvc { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px; }
+  .kasvc .svc { background:var(--panel); border:1px solid var(--line); border-left:4px solid #6B625A; border-radius:8px; padding:8px 12px; font-size:12.5px; }
+  .kasvc .svc.ok { border-left-color:var(--green); } .kasvc .svc.warn { border-left-color:var(--gold); } .kasvc .svc.error { border-left-color:var(--red); }
+  .kasvc .svc b { display:block; font-size:13px; } .kasvc .svc span { color:var(--muted); }
+  .katopic { background:var(--panel); border:1px solid var(--line); border-left:4px solid #6B625A; border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .katopic.ok { border-left-color:var(--green); } .katopic.warn { border-left-color:var(--gold); } .katopic.error { border-left-color:var(--red); }
+  .katopic .hd { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; font-size:13px; } .katopic .hd b { font-size:14px; }
+  .katopic .hd span { color:var(--muted); }
+  .katopic table { border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; } .katopic td, .katopic th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  .katopic td.v { font-family:ui-monospace,monospace; word-break:break-all; } .katopic tr.neu td { background:rgba(80,160,120,.12); }
   #sgMsg { display:block; margin-top:12px; font-size:13px; }
   .ai .top { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px; }
   .ai .top h2 { font-size:18px; margin:0 12px 0 0; } .ai .top .meta { color:var(--muted); font-size:12px; }
@@ -153,6 +164,7 @@
     <button id="vMap">Mapping</button>
     <button id="vStatus">Laufzeit</button>
     <button id="vLogs">Log</button>
+    <button id="vKa">Kafka<span class="badge" id="kaBadge"></span></button>
     <button id="vEv">Ereignisse<span class="badge" id="evBadge"></span></button>
     <button id="vSap">SAP-Gateway<span class="badge" id="sapBadge"></span></button>
     <button id="vAi">Assistent<span class="badge" id="aiBadge"></span></button>
@@ -187,6 +199,18 @@
         </div>
         <div id="aiText"></div>
         <div class="cards" id="aiCards"><p style="color:var(--muted)">lädt …</p></div>
+      </div></div>
+      <div id="ka" class="panel"><div class="ai">
+        <div class="top">
+          <h2>Kafka</h2>
+          <button class="btn ghost" id="kaRefresh">Aktualisieren</button>
+          <label style="font-size:13px;color:var(--muted)"><input type="checkbox" id="kaAuto" checked> automatisch (20 s)</label>
+          <span class="meta" id="kaMeta"></span>
+        </div>
+        <h3 class="kah">Dienste</h3>
+        <div class="kasvc" id="kaSvc"><p style="color:var(--muted)">lädt …</p></div>
+        <h3 class="kah">Topics – aktueller Inhalt (je die letzten 10 Ereignisse, neueste oben)</h3>
+        <div id="kaTopics"></div>
       </div></div>
       <div id="ev" class="panel"><div class="ai">
         <div class="top">
@@ -692,12 +716,14 @@ function applyMapping() {
 
 function showTab(t) {
   tab = t;
-  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vEv','ev'],['vSap','sap'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
+  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vKa','ka'],['vEv','ev'],['vSap','sap'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
   $('map').classList.toggle('show', t === 'map');
   $('lic').classList.toggle('show', t === 'lic');
   $('ai').classList.toggle('show', t === 'ai');
   $('sap').classList.toggle('show', t === 'sap');
   $('ev').classList.toggle('show', t === 'ev');
+  $('ka').classList.toggle('show', t === 'ka');
+  if (t === 'ka') loadKa();
   if (t === 'ev') loadEv();
   if (t === 'sap') loadSap();
   if (t === 'ai') loadInsights();
@@ -705,12 +731,13 @@ function showTab(t) {
   $('fltProbL').style.display = t === 'logs' ? '' : 'none';
   $('resbox').classList.toggle('show', t === 'status');
   if (t === 'map') renderMap();
-  else if (t !== 'design' && t !== 'sap' && t !== 'ev' && t !== 'ai' && t !== 'lic') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
+  else if (t !== 'design' && t !== 'sap' && t !== 'ev' && t !== 'ka' && t !== 'ai' && t !== 'lic') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
 }
 $('vDesign').onclick = () => showTab('design');
 $('vAi').onclick = () => showTab('ai');
 $('vSap').onclick = () => showTab('sap');
 $('vEv').onclick = () => showTab('ev');
+$('vKa').onclick = () => showTab('ka');
 $('licBtn').onclick = () => showTab('lic');
 $('vMap').onclick = () => showTab('map');
 $('vStatus').onclick = () => showTab('status');
@@ -934,6 +961,43 @@ async function replayEv(dlq, btn) {
   loadEv(true);
 }
 $('evRefresh').onclick = () => loadEv(true);
+
+
+// ---------- Kafka: Dienste + Inhalt der Topics ----------
+let kaTimer = null; const kaSeen = {};
+const TOPIC_TEXT = { 'sf.opportunity': 'Salesforce meldet geänderte Opportunities (CDC)', 'crm.order': 'CRM-Aufträge aus der Outbox an SAP',
+  'sap.order.status': 'SAP-Auftrag angelegt / Statuswechsel', 'snow.events': 'Änderungen an ServiceNow-Accounts und -Kontakten' };
+async function loadKa(fresh) {
+  clearTimeout(kaTimer);
+  if (tab !== 'ka') return;
+  try {
+    const d = JSON.parse(await api('/events/kafka'));
+    let worst = '';
+    $('kaSvc').innerHTML = (d.dienste || []).map(s => {
+      const z = s.zustand, ok = z === 'active', st = ok ? 'ok' : (z === 'activating' || z === 'angehalten' || z === 'reloading') ? 'warn' : 'error';
+      if (st === 'error') worst = 'error'; else if (st === 'warn' && !worst) worst = 'warn';
+      const seit = s.seit ? s.seit.replace(/^\w+ /, '').replace(/ UTC$/, '') + ' UTC' : '';
+      return `<div class="svc ${st}"><b>${esc(s.dienst.replace(/^beyondflow-/, ''))}</b><span>${esc(ok ? (s.detail === 'waiting' ? 'wartet (Timer)' : 'läuft') : z)}${seit ? ' · seit ' + esc(seit) : ''}</span></div>`;
+    }).join('');
+    const ev = d.ereignisse || {};
+    $('kaTopics').innerHTML = (d.topics || []).map(t => {
+      const ab = t.abnehmer || [], lag = ab.reduce((n, a) => n + (a.rueckstand || 0), 0);
+      const st = t.fehlerTopic ? (t.offen > 0 ? 'warn' : 'ok') : lag > 50 ? 'error' : lag > 0 ? 'warn' : 'ok';
+      if (st === 'error') worst = 'error'; else if (st === 'warn' && !worst) worst = 'warn';
+      const prev = kaSeen[t.name]; kaSeen[t.name] = t.nachrichten;
+      const rows = (ev[t.name] || []).map(e => `<tr class="${prev != null && Number(e.offset) >= prev ? 'neu' : ''}"><td>${esc(e.offset)}</td><td>${utc(e.zeit)}</td><td>${esc(e.schluessel === 'null' ? '–' : e.schluessel)}</td><td class="v">${esc(e.wert)}</td></tr>`).join('');
+      const abn = ab.map(a => `${esc(a.gruppe)}: ${a.aktiv ? 'verbunden' : '<b>nicht verbunden</b>'}, Rückstand ${a.rueckstand ?? '–'}`).join(' · ');
+      return `<div class="katopic ${st}"><div class="hd"><b>${esc(t.name)}</b><span>${esc(TOPIC_TEXT[t.name] || (t.fehlerTopic ? 'Fehler-Topic: nicht verarbeitete Ereignisse' : ''))}</span>
+        <span>${t.nachrichten} Nachrichten${t.fehlerTopic ? ' · ' + t.offen + ' nicht erneut eingespielt' : ''}</span><span>${abn || (t.fehlerTopic ? '' : '<b>kein Abnehmer</b>')}</span></div>
+        ${rows ? `<table><tr><th>Offset</th><th>Zeit</th><th>Schlüssel</th><th>Inhalt</th></tr>${rows}</table>` : '<p style="color:var(--muted);margin:6px 0 0">leer</p>'}</div>`;
+    }).join('') || '<p style="color:var(--muted)">' + esc(d.kafka || 'keine Topics') + '</p>';
+    $('kaMeta').textContent = 'Stand ' + (d.zeit || '') + ' UTC · ' + (d.ms ?? '') + ' ms · neue Ereignisse seit dem letzten Abruf grün hinterlegt';
+    $('kaBadge').className = 'badge' + (worst ? ' show' + (worst === 'warn' ? ' warn' : '') : ''); $('kaBadge').textContent = worst ? '!' : '';
+  } catch (err) { $('kaTopics').innerHTML = '<p style="color:var(--red)">' + esc(err.message) + '</p>'; }
+  if ($('kaAuto').checked) kaTimer = setTimeout(loadKa, 20000);
+}
+$('kaRefresh').onclick = () => loadKa(true);
+$('kaAuto').onchange = () => { if ($('kaAuto').checked) loadKa(); else clearTimeout(kaTimer); };
 </script>
 </body>
 </html>

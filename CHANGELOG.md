@@ -4,6 +4,13 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.27 – 25.11.2026 – Reiter „Kafka“
+- Studio: neuer Reiter **Kafka**.
+  - **Dienste:** Zustand aller BeyondFlow-Dienste auf der VM (Kafka, Hauptlaufzeit, Ereignis-Laufzeit, Eingang, API, Studio, Update- und Zertifikats-Timer) mit „seit“, dazu das SAP-Gateway auf der SAP-VM.
+  - **Topics:** je Topic die letzten 10 Ereignisse (neueste oben), Nachrichtenzahl, Abnehmergruppen mit Rückstand; seit dem letzten Abruf neue Ereignisse grün hinterlegt; automatische Aktualisierung alle 20 s (abschaltbar).
+  - Gelesen werden nur Topics, deren Ende sich geändert hat, parallel in einem Aufruf (erster Aufruf ca. 10 s, danach ca. 3 s).
+- API: `GET /api/events/kafka`.
+
 ## 0.26 – 25.11.2026 – Alte Flows nur noch als Referenz
 - Neuer Ordner `runtime/reference/`: frühere Wege und Beispiele, die der Installer **immer deaktiviert** einspielt (im Studio sichtbar, nicht aktiv, nicht gelöscht):
   - `inbox-triggers` – HTTP-Anstoß aus der Ereignis-Laufzeit, ersetzt durch Kafka `sf.opportunity`
