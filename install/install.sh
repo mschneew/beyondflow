@@ -16,6 +16,7 @@
 #
 # Geheimnisse werden nur abgefragt, wenn sie in ~/beyondflow/config/secrets.env fehlen (verdeckte Eingabe).
 set -euo pipefail
+trap 'echo; echo "ABBRUCH in install.sh Zeile $LINENO (Befehl: $BASH_COMMAND)"' ERR
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 VERSION=$(cat "$SRC/VERSION")
