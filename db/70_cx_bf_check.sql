@@ -26,11 +26,13 @@ CREATE OR REPLACE PACKAGE BODY siebel.cx_bf_check AS
     l_row VARCHAR2(15);
     l_sys VARCHAR2(30);
     l_ext VARCHAR2(200);
+    l_refs VARCHAR2(4000);
   BEGIN
     CASE LOWER(p_type)
     WHEN 'auftrag' THEN
       SELECT MAX(row_id) INTO l_row FROM siebel.s_order WHERE order_num = p_key;
       IF l_row IS NULL THEN o_json := JSON_OBJECT('found' VALUE 'false' FORMAT JSON, 'typ' VALUE 'auftrag', 'key' VALUE p_key); RETURN; END IF;
+      l_refs := refs('S_ORDER', l_row);
       SELECT JSON_OBJECT(
                'found' VALUE 'true' FORMAT JSON, 'typ' VALUE 'auftrag', 'rowId' VALUE o.row_id,
                'auftrag' VALUE o.order_num, 'datum' VALUE TO_CHAR(o.order_dt, 'YYYY-MM-DD'),
@@ -42,7 +44,7 @@ CREATE OR REPLACE PACKAGE BODY siebel.cx_bf_check AS
                                                         ORDER BY i.ln_num RETURNING VARCHAR2(8000))
                                      FROM siebel.s_order_item i LEFT JOIN siebel.s_prod_int p ON p.row_id = i.prod_id
                                     WHERE i.order_id = o.row_id) FORMAT JSON,
-               'externeIds' VALUE refs('S_ORDER', o.row_id) FORMAT JSON,
+               'externeIds' VALUE l_refs FORMAT JSON,
                'sapOutbox' VALUE (SELECT JSON_ARRAYAGG(JSON_OBJECT('status' VALUE b.status_cd, 'versuche' VALUE b.retry_cnt,
                                                                    'meldung' VALUE SUBSTR(b.err_msg, 1, 500),
                                                                    'angelegt' VALUE TO_CHAR(b.created, 'YYYY-MM-DD"T"HH24:MI:SS'))
@@ -57,24 +59,26 @@ CREATE OR REPLACE PACKAGE BODY siebel.cx_bf_check AS
     WHEN 'account' THEN
       SELECT MAX(row_id) INTO l_row FROM siebel.s_org_ext WHERE row_id = p_key;
       IF l_row IS NULL THEN o_json := JSON_OBJECT('found' VALUE 'false' FORMAT JSON, 'typ' VALUE 'account', 'key' VALUE p_key); RETURN; END IF;
+      l_refs := refs('S_ORG_EXT', l_row);
       SELECT JSON_OBJECT(
                'found' VALUE 'true' FORMAT JSON, 'typ' VALUE 'account', 'rowId' VALUE a.row_id,
                'name' VALUE a.name, 'ort' VALUE a.loc, 'nummer' VALUE a.ou_num, 'telefon' VALUE a.main_ph_num,
                'web' VALUE a.url, 'geaendert' VALUE TO_CHAR(a.last_upd, 'YYYY-MM-DD"T"HH24:MI:SS'),
                'kontakte' VALUE (SELECT COUNT(*) FROM siebel.s_contact c WHERE c.pr_dept_ou_id = a.row_id),
-               'externeIds' VALUE refs('S_ORG_EXT', a.row_id) FORMAT JSON
+               'externeIds' VALUE l_refs FORMAT JSON
                RETURNING VARCHAR2(32767))
         INTO o_json FROM siebel.s_org_ext a WHERE a.row_id = l_row;
 
     WHEN 'kontakt' THEN
       SELECT MAX(row_id) INTO l_row FROM siebel.s_contact WHERE row_id = p_key;
       IF l_row IS NULL THEN o_json := JSON_OBJECT('found' VALUE 'false' FORMAT JSON, 'typ' VALUE 'kontakt', 'key' VALUE p_key); RETURN; END IF;
+      l_refs := refs('S_CONTACT', l_row);
       SELECT JSON_OBJECT(
                'found' VALUE 'true' FORMAT JSON, 'typ' VALUE 'kontakt', 'rowId' VALUE c.row_id,
                'vorname' VALUE c.fst_name, 'nachname' VALUE c.last_name, 'email' VALUE c.email_addr,
                'accountId' VALUE c.pr_dept_ou_id, 'account' VALUE a.name,
                'geaendert' VALUE TO_CHAR(c.last_upd, 'YYYY-MM-DD"T"HH24:MI:SS'),
-               'externeIds' VALUE refs('S_CONTACT', c.row_id) FORMAT JSON
+               'externeIds' VALUE l_refs FORMAT JSON
                RETURNING VARCHAR2(32767))
         INTO o_json
         FROM siebel.s_contact c LEFT JOIN siebel.s_org_ext a ON a.row_id = c.pr_dept_ou_id
