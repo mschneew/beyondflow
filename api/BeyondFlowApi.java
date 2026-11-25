@@ -466,7 +466,13 @@ public class BeyondFlowApi {
             b.append("]");
             // oeffentlicher Eingang
             String host = "";
-            try { for (String l : Files.readAllLines(HOME.resolve("beyondflow.conf"))) if (l.startsWith("BF_PUBLIC_HOST=")) host = l.substring(15).replaceAll("[\"' ]|#.*", ""); } catch (IOException ignore) {}
+            String name = "";
+            try { for (String l : Files.readAllLines(HOME.resolve("beyondflow.conf"))) {
+                if (l.startsWith("BF_PUBLIC_HOST=")) host = l.substring(15).replaceAll("#.*|[\"' ]", "");
+                if (l.startsWith("BF_PUBLIC_NAME=")) name = l.substring(15).replaceAll("#.*|[\"' ]", "");
+            } } catch (IOException ignore) {}
+            if (name.isEmpty() && !host.isEmpty()) name = host.replace('.', '-') + ".sslip.io";
+            host = name;
             b.append(",\"eingang\":{\"host\":").append(Ops.js(host));
             Path cert = BASE.resolve("edge/certs/fullchain.pem");
             if (!host.isEmpty() && Files.exists(cert)) {

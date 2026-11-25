@@ -4,7 +4,7 @@ ServiceNow meldet jede Änderung an Accounts und Kontakten sofort an BeyondFlow.
 
 ```
 ServiceNow (Business Rule, async)
-  -> HTTPS POST https://<IP>/ingest/servicenow   {table, sys_id, operation} + HMAC-Signatur
+  -> HTTPS POST https://<Name>/ingest/servicenow   {table, sys_id, operation} + HMAC-Signatur
   -> BeyondFlow API (prüft Signatur, Zeitstempel ±5 Min., Tabelle, sys_id)
   -> Flow snow-events-in -> Kafka-Topic snow.events
   -> Flow snow-events-to-crm (liest den Datensatz über die Table API nach) -> BeyondCRM
@@ -19,7 +19,7 @@ Die Meldung enthält **keine Inhalte**, nur „Datensatz X in Tabelle Y wurde ge
 
    | Name | Typ | Wert |
    |---|---|---|
-   | `beyondflow.events.url` | string | `https://<öffentliche IP der BeyondFlow-VM>/ingest/servicenow` |
+   | `beyondflow.events.url` | string | `https://<BF_PUBLIC_NAME>/ingest/servicenow`, ohne eigenen DNS-Namen `https://<ip-mit-bindestrichen>.sslip.io/ingest/servicenow` (der Installer gibt die Adresse aus) |
    | `beyondflow.events.hmac_key` | password2 | Wert von `BF_SNOW_HMAC` aus `~/beyondflow/config/secrets.env` auf der BeyondFlow-VM |
 
    Den Schlüssel auf der VM anzeigen: `grep BF_SNOW_HMAC ~/beyondflow/config/secrets.env` (nur den Teil nach `=` kopieren).

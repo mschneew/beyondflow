@@ -17,6 +17,7 @@ BF_SAP_GATEWAY=http://<private-ip-sap-vm>:8095   # Ausgabe von sap-gateway/insta
 BF_KAFKA=yes                             # Ereignis-Broker Apache Kafka auf dieser VM (nur lokal)
 BF_PUBLIC_HOST=                          # oeffentliche IP der VM, z. B. 92.5.x.x; leer = kein oeffentlicher Eingang
                                          # (noetig fuer Ereignisse aus ServiceNow; OCI: 443 und 80 eingehend freigeben)
+BF_PUBLIC_NAME=                          # DNS-Name dieser IP fuer das Zertifikat; leer = <ip-mit-bindestrichen>.sslip.io
 
 # --- Versionen (fuer reproduzierbare Installationen festgeschrieben) ---
 BF_CAMEL_VERSION=4.22.0

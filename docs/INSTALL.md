@@ -137,7 +137,7 @@ Den TNS-Alias (meist `<db>_low`) aus `tnsnames.ora` im ZIP notieren.
 
 Ohne Ereignisse gleicht BeyondFlow ServiceNow stündlich ab. Mit Ereignissen kommt jede Änderung an Accounts und Kontakten nach wenigen Sekunden im CRM an.
 
-Ablauf: ServiceNow (Business Rule, async) → HTTPS `https://<öffentliche IP>/ingest/servicenow` → Prüfung der Signatur → Kafka-Topic `snow.events` → Flow `snow-events-to-crm` → CRM. Fehler landen im Topic `snow.events.dlq`.
+Ablauf: ServiceNow (Business Rule, async) → HTTPS `https://<Name>/ingest/servicenow` → Prüfung der Signatur → Kafka-Topic `snow.events` → Flow `snow-events-to-crm` → CRM. Fehler landen im Topic `snow.events.dlq`.
 
 1. **OCI:** In der Security List des Subnetzes eingehend TCP **443** und **80** von `0.0.0.0/0` erlauben.
    - 443: Ereignisse. Von außen ist nur dieser eine Pfad erreichbar, jede Meldung muss signiert sein.
@@ -145,7 +145,8 @@ Ablauf: ServiceNow (Business Rule, async) → HTTPS `https://<öffentliche IP>/i
 2. In `~/beyondflow.conf`: `BF_PUBLIC_HOST=<öffentliche IP der VM>`, dann `install/install.sh` (oder auf das automatische Update warten). Der Installer
    - richtet die Firewall-Weiterleitung 443 → 8443 und 80 → 8089 ein,
    - startet den Eingang (`beyondflow-edge`, nginx),
-   - holt ein Let's-Encrypt-Zertifikat für die IP-Adresse. IP-Zertifikate gibt es nur als Kurzzeit-Zertifikat (gut 6 Tage); der Timer `beyondflow-cert.timer` erneuert es automatisch nach 3 Tagen (Protokoll `logs/cert.log`),
+   - holt ein Let's-Encrypt-Zertifikat (90 Tage, automatische Erneuerung über `beyondflow-cert.timer`, Protokoll `logs/cert.log`). Name im Zertifikat: `BF_PUBLIC_NAME`, falls der Kunde einen DNS-Namen für die IP hat; sonst `<ip-mit-bindestrichen>.sslip.io` (öffentlicher DNS-Dienst, löst auf die IP auf).
+     Kein reines IP-Zertifikat: Let's Encrypt stellt es nur ohne Subject aus, und ServiceNow lehnt solche Zertifikate ab („badly formatted directory string“).
    - erzeugt den Signaturschlüssel `BF_SNOW_HMAC` in `secrets.env`.
 3. In ServiceNow die Systemeigenschaften, das Script Include und die Business Rules einrichten: siehe [`servicenow/README.md`](../servicenow/README.md). Den Schlüssel auf der VM anzeigen mit `grep BF_SNOW_HMAC ~/beyondflow/config/secrets.env` und selbst in die Eigenschaft `beyondflow.events.hmac_key` eintragen.
 4. Prüfen im Studio, Reiter **Ereignisse**: Eingang „bereit“ mit Let's-Encrypt-Zertifikat; nach einer Änderung in ServiceNow steigt „Angenommen“, das Topic `snow.events` hat keinen Rückstand.

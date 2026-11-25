@@ -243,7 +243,8 @@ if [ -n "$BF_PUBLIC_HOST" ]; then
   systemctl --user restart beyondflow-edge
   systemctl --user enable --now beyondflow-cert.timer >/dev/null 2>&1
   systemctl --user start --no-block beyondflow-cert.service
-  echo "Ereignis-Eingang: https://$BF_PUBLIC_HOST/ingest/servicenow (Zertifikat: logs/cert.log)"
+  BF_PUBLIC_NAME=${BF_PUBLIC_NAME:-${BF_PUBLIC_HOST//./-}.sslip.io}
+  echo "Ereignis-Eingang: https://$BF_PUBLIC_NAME/ingest/servicenow (Zertifikat: logs/cert.log)"
 fi
 echo "$VERSION" > $B/VERSION
 
