@@ -143,7 +143,7 @@ render() { sed -e "s|@BF_HOME@|$B|g" -e "s|@BF_DB_TNS@|$BF_DB_TNS|g" -e "s|@BF_D
 merge_props() { # neue Datei anlegen; bestehende nur um fehlende bf.*-Schluessel ergaenzen (manuelle Anpassungen bleiben)
   local tpl=$1 dst=$2
   if [ ! -f "$dst" ]; then render "$tpl" > "$dst"; echo "  angelegt: $(basename "$dst")"; return; fi
-  render "$tpl" | grep -E '^bf\.' | while IFS= read -r line; do
+  render "$tpl" | { grep -E '^bf\.' || true; } | while IFS= read -r line; do
     grep -q "^${line%%=*}=" "$dst" || { echo "$line" >> "$dst"; echo "  ergaenzt in $(basename "$dst"): ${line%%=*}"; }
   done
 }
