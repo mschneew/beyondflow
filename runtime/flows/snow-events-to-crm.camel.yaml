@@ -13,28 +13,28 @@
         - setProperty:
             name: bfEvent
             simple: "${body}"
-        - setProperty:
-            name: bfTable
-            jq:
-              expression: .table
-              resultType: java.lang.String
-        - setProperty:
-            name: bfSysId
-            jq:
-              expression: .sys_id
-              resultType: java.lang.String
-        - setProperty:
-            name: bfOp
-            jq:
-              expression: .operation
-              resultType: java.lang.String
-        - setProperty:
-            name: bfSource
-            jq:
-              expression: '.source // "servicenow"'
-              resultType: java.lang.String
         - doTry:
             steps:
+              - setProperty:
+                  name: bfTable
+                  jq:
+                    expression: .table
+                    resultType: java.lang.String
+              - setProperty:
+                  name: bfSysId
+                  jq:
+                    expression: .sys_id
+                    resultType: java.lang.String
+              - setProperty:
+                  name: bfOp
+                  jq:
+                    expression: .operation
+                    resultType: java.lang.String
+              - setProperty:
+                  name: bfSource
+                  jq:
+                    expression: '.source // "servicenow"'
+                    resultType: java.lang.String
               - choice:
                   when:
                     - simple: "${exchangeProperty.bfOp} == 'delete'"

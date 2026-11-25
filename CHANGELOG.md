@@ -4,6 +4,22 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.24 – 25.11.2026 – Salesforce, CRM-Aufträge und SAP-Status über Kafka, Wiedereinspielen
+Alle Ereignisströme laufen jetzt über Kafka. Jeder Strom hat ein eigenes Fehler-Topic (`*.dlq`).
+
+| Topic | Erzeuger | Abnehmer |
+|---|---|---|
+| `sf.opportunity` | `event-sf-opportunity` (Salesforce CDC, Ereignis-Laufzeit) | `sf-opportunity-events` → Abgleich gewonnener Opportunities |
+| `crm.order` | `crm-orders-to-sap` (Relay aus der CRM-Outbox, alle 5 s) | `crm-order-events-to-sap` → SAP-Gateway → Outbox abschließen |
+| `sap.order.status` | `crm-order-events-to-sap` (Angelegt) und `sap-status-to-crm` (Statuswechsel aus SAP, alle 10 Min.) | `sap-status-events-to-crm` → ERP-Status im CRM → Rückmeldung an Salesforce |
+| `snow.events` | ServiceNow-Ereignisse, stündlicher Abgleich | `snow-events-to-crm` |
+
+- CRM-Outbox bleibt die Quelle der Wahrheit („Transactional Outbox“): Ein Eintrag, der nicht in Kafka ankommt, wird nach 10 Min. erneut aufgenommen. Doppelte Zustellung ist unkritisch, weil das SAP-Gateway über die Kundenbestellnummer Dubletten erkennt.
+- Salesforce-Ereignisse: Ist Kafka nicht erreichbar, stößt die Ereignis-Laufzeit den Abgleich wie bisher direkt an.
+- Studio, Reiter „Ereignisse“: **Erneut einspielen** für Fehler-Topics. Es werden nur die seit dem letzten Einspielen hinzugekommenen Ereignisse zurück ins Ursprungs-Topic geschrieben; der Stand (`config/replay-offsets.properties`) wird erst nach erfolgreichem Schreiben fortgeschrieben. Schlägt ein Ereignis erneut fehl, landet es wieder im Fehler-Topic.
+- Ereignisse werden als einzeiliges JSON geschrieben (Voraussetzung für das Wiedereinspielen).
+- Lokal getestet mit Kafka 4.1.2 und Camel 4.22: Kette `crm.order` → SAP (Stub) → `sap.order.status` → CRM → Salesforce-Rückmeldung, `sf.opportunity` → Abgleich, Fehlerfall → `*.dlq` → Wiedereinspielen.
+
 ## 0.23 – 25.11.2026 – Zertifikat mit Namen statt IP
 - Erster echter Test: ServiceNow lehnt das Let's-Encrypt-Zertifikat für die reine IP ab (`IllegalArgumentException: badly formatted directory string`). IP-Zertifikate gibt es nur im Profil „shortlived“, und das hat kein Subject (CN).
 - Das Zertifikat lautet jetzt auf `BF_PUBLIC_NAME` oder, ohne eigenen DNS-Namen, auf `<ip-mit-bindestrichen>.sslip.io` (Standardprofil, 90 Tage, automatische Erneuerung). Das alte IP-Zertifikat wird nicht mehr erneuert.

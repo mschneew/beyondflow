@@ -259,7 +259,7 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
    2. Innerhalb von Sekunden (Ereignis) bzw. 15 Minuten (Timer) muss im CRM ein Auftrag `AU-…` entstehen.
    3. Danach entsteht der SAP-Auftrag. Die Felder `BeyondCRM_Auftrag__c`, `SAP_Auftrag__c` und `ERP_Status__c` an der Opportunity sind gefüllt.
 5. **Log:** keine roten Einträge nach dem Start.
-6. **Ereignisse:** Im Reiter „Ereignisse“ läuft der Broker; alle Topics ohne Rückstand.
+6. **Ereignisse:** Im Reiter „Ereignisse“ läuft der Broker; alle Topics ohne Rückstand. Topics: `sf.opportunity`, `crm.order`, `sap.order.status`, `snow.events` und je ein Fehler-Topic `*.dlq` (mit „Erneut einspielen“).
 7. **SAP-Gateway** (wenn angebunden): Im Reiter „SAP-Gateway“ sind Dienst, Gateway-Prozess und Warteschlange grün.
 8. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
    - `http://localhost:8080/api/crm/check/auftrag/AU-2026-0408`

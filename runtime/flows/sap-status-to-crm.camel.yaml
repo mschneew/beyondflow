@@ -1,6 +1,6 @@
 - route:
     id: sap-status-to-crm
-    description: "SAP Auftragsstatus -> BeyondCRM ERP-Status"
+    description: "SAP Auftragsstatus abfragen (alle 10 Min.) -> geaenderter Status als Ereignis nach Kafka sap.order.status"
     from:
       uri: timer:sap-status-to-crm
       parameters:
@@ -72,13 +72,14 @@
                         description: "Status geaendert"
                         simple: "${exchangeProperty.newStatus} != ${exchangeProperty.oldStatus}"
                         steps:
+                          - setBody:
+                              simple: '{"orderNum":"${exchangeProperty.orderNum}","sapVbeln":"${exchangeProperty.sapVbeln}","alt":"${exchangeProperty.oldStatus}","neu":"${exchangeProperty.newStatus}","quelle":"sap-abfrage"}'
+                          - removeHeaders:
+                              pattern: "*"
+                          - setHeader:
+                              name: CamelKafkaKey
+                              simple: "${exchangeProperty.orderNum}"
                           - to:
-                              uri: "sql-stored:siebel.cx_bf_sap.set_erp_status(VARCHAR ${exchangeProperty.sapVbeln},VARCHAR ${exchangeProperty.newStatus},OUT VARCHAR result)"
+                              uri: kafka:sap.order.status
                               parameters:
-                                dataSource: "#crmdb"
-                          - log:
-                              message: "Auftrag ${exchangeProperty.orderNum} (SAP ${exchangeProperty.sapVbeln}): ERP-Status ${exchangeProperty.oldStatus} -> ${exchangeProperty.newStatus}"
-                          - to:
-                              uri: seda:crm-orders-to-sf-sync
-                              parameters:
-                                waitForTaskToComplete: Never
+                                brokers: "{{bf.kafka.brokers}}"

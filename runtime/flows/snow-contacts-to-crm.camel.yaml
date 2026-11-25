@@ -39,6 +39,9 @@
                   description: "Als Ereignis mit mitgeliefertem Datensatz ins Topic (Verarbeitung: snow-events-to-crm)"
                   jq:
                     expression: '{table: "customer_contact", sys_id: .sys_id, operation: "abgleich", source: "abgleich", record: .}'
+              - marshal:
+                  json:
+                    library: Jackson
               - convertBodyTo:
                   type: java.lang.String
               - removeHeaders:

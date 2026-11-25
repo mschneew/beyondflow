@@ -1,0 +1,69 @@
+- route:
+    id: sap-status-events-to-crm
+    description: "Kafka sap.order.status -> BeyondCRM ERP-Status -> Rueckmeldung an Salesforce"
+    from:
+      uri: kafka:sap.order.status
+      parameters:
+        brokers: "{{bf.kafka.brokers}}"
+        groupId: bf-sap-status-to-crm
+        autoOffsetReset: earliest
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setProperty:
+            name: bfEvent
+            simple: "${body}"
+        - doTry:
+            steps:
+              - setProperty:
+                  name: orderNum
+                  jq:
+                    expression: .orderNum
+                    resultType: java.lang.String
+              - setProperty:
+                  name: sapVbeln
+                  jq:
+                    expression: .sapVbeln
+                    resultType: java.lang.String
+              - setProperty:
+                  name: oldStatus
+                  jq:
+                    expression: '.alt // "-"'
+                    resultType: java.lang.String
+              - setProperty:
+                  name: newStatus
+                  jq:
+                    expression: .neu
+                    resultType: java.lang.String
+              - to:
+                  uri: "sql-stored:siebel.cx_bf_sap.set_erp_status(VARCHAR ${exchangeProperty.sapVbeln},VARCHAR ${exchangeProperty.newStatus},OUT VARCHAR result)"
+                  parameters:
+                    dataSource: "#crmdb"
+              - log:
+                  message: "Auftrag ${exchangeProperty.orderNum} (SAP ${exchangeProperty.sapVbeln}): ERP-Status ${exchangeProperty.oldStatus} -> ${exchangeProperty.newStatus}"
+              - to:
+                  description: "Rueckmeldung an Salesforce sofort anstossen"
+                  uri: seda:crm-orders-to-sf-sync
+                  parameters:
+                    waitForTaskToComplete: Never
+            doCatch:
+              - exception:
+                  - java.lang.Exception
+                steps:
+                  - log:
+                      loggingLevel: ERROR
+                      message: "SAP-Status fuer Auftrag ${exchangeProperty.orderNum} nicht ins CRM geschrieben: ${exception.message} - abgelegt in sap.order.status.dlq"
+                  - setBody:
+                      simple: "${exchangeProperty.bfEvent}"
+                  - removeHeaders:
+                      pattern: "*"
+                  - setHeader:
+                      name: CamelKafkaKey
+                      simple: "${exchangeProperty.orderNum}"
+                  - setHeader:
+                      name: bfFehler
+                      simple: "${exception.message}"
+                  - to:
+                      uri: kafka:sap.order.status.dlq
+                      parameters:
+                        brokers: "{{bf.kafka.brokers}}"

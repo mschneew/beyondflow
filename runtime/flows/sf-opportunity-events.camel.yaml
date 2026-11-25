@@ -1,0 +1,25 @@
+- route:
+    id: sf-opportunity-events
+    description: "Kafka sf.opportunity (Salesforce CDC) -> sofortiger Abgleich gewonnener Opportunities (sf-opportunities-sync)"
+    from:
+      uri: kafka:sf.opportunity
+      parameters:
+        brokers: "{{bf.kafka.brokers}}"
+        groupId: bf-sf-opp-to-crm
+        autoOffsetReset: latest
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setProperty:
+            name: stage
+            jq:
+              expression: '.StageName // "?"'
+              resultType: java.lang.String
+        - log:
+            message: "Kafka sf.opportunity: Phase ${exchangeProperty.stage} -> Abgleich"
+        - setBody:
+            constant: ""
+        - to:
+            uri: seda:sf-opp-sync
+            parameters:
+              waitForTaskToComplete: Never

@@ -417,6 +417,13 @@ public class BeyondFlowApi {
                     if (fresh || cache == null || System.currentTimeMillis() - cacheAt > 15000) { cache = status(); cacheAt = System.currentTimeMillis(); }
                     send(ex, 200, "application/json", cache); return;
                 }
+                if (path.startsWith("/api/events/replay/") && ex.getRequestMethod().equals("POST")) {
+                    String t = path.substring("/api/events/replay/".length());
+                    if (!TOPIC.matcher(t).matches() || !t.endsWith(".dlq")) { send(ex, 400, "text/plain", "nur Fehler-Topics (*.dlq)"); return; }
+                    String r = replay(t); cache = null;
+                    try { Files.write(BASE.resolve("logs/events-actions.log"), (Instant.now() + "  replay " + t + "  " + r + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND); } catch (IOException ignore) {}
+                    send(ex, 200, "application/json", r); return;
+                }
                 if (path.startsWith("/api/events/peek/")) {
                     String t = path.substring("/api/events/peek/".length());
                     if (!TOPIC.matcher(t).matches()) { send(ex, 400, "text/plain", "Topic ungueltig"); return; }
@@ -459,7 +466,8 @@ public class BeyondFlowApi {
                 int i = 0;
                 for (Map.Entry<String, Long> e : end.entrySet()) {
                     b.append(i++ > 0 ? "," : "").append("{\"name\":").append(Ops.js(e.getKey())).append(",\"nachrichten\":").append(e.getValue())
-                     .append(",\"fehlerTopic\":").append(e.getKey().endsWith(".dlq")).append(",\"abnehmer\":[")
+                     .append(",\"fehlerTopic\":").append(e.getKey().endsWith(".dlq"))
+                     .append(",\"offen\":").append(e.getKey().endsWith(".dlq") ? Math.max(0, e.getValue() - replayedUpTo(e.getKey())) : 0).append(",\"abnehmer\":[")
                      .append(String.join(",", groups.getOrDefault(e.getKey(), List.of()))).append("]}");
                 }
             }
@@ -489,6 +497,36 @@ public class BeyondFlowApi {
             for (int i = last.size() - 1, n = 0; i >= 0; i--, n++) b.append(n > 0 ? "," : "").append(Ops.js(last.get(i)));
             b.append("]},\"zeit\":").append(Ops.js(Instant.now().toString().substring(11, 19))).append("}");
             return b.toString();
+        }
+
+        // Fehler-Topic erneut einspielen: alle seit dem letzten Einspielen hinzugekommenen Ereignisse zurueck ins Ursprungs-Topic.
+        // Der Stand (bis zu welchem Offset eingespielt) steht in config/replay-offsets.properties und wird erst nach erfolgreichem Schreiben fortgeschrieben.
+        static final Path REPLAY = BASE.resolve("config/replay-offsets.properties");
+        static synchronized Properties replayState() {
+            Properties p = new Properties();
+            try (Reader r = Files.newBufferedReader(REPLAY)) { p.load(r); } catch (IOException ignore) {}
+            return p;
+        }
+        static long replayedUpTo(String dlq) { try { return Long.parseLong(replayState().getProperty(dlq, "0")); } catch (NumberFormatException e) { return 0; } }
+
+        static synchronized String replay(String dlq) {
+            long t0 = System.currentTimeMillis();
+            String target = dlq.substring(0, dlq.length() - 4);
+            Long end = offsets(" --topic " + dlq).get(dlq);
+            long from = replayedUpTo(dlq);
+            if (end == null || end <= from) return Ops.res(true, "Nichts einzuspielen", System.currentTimeMillis() - t0);
+            long n = end - from;
+            String out = kx(120, K + "kafka-console-consumer.sh" + BS + " --topic " + dlq + " --partition 0 --offset " + from + " --max-messages " + n
+                + " --timeout-ms 10000 --property print.key=true > /tmp/bf-replay.txt 2>/dev/null; c=$(grep -c . /tmp/bf-replay.txt); "
+                + "if [ \"$c\" = \"" + n + "\" ]; then " + K + "kafka-console-producer.sh" + BS + " --topic " + target
+                + " --property parse.key=true < /tmp/bf-replay.txt >/dev/null 2>&1 && echo REPLAY_OK || echo REPLAY_FEHLER; else echo REPLAY_GELESEN=$c; fi; rm -f /tmp/bf-replay.txt");
+            if (!out.contains("REPLAY_OK"))
+                return Ops.res(false, "Einspielen fehlgeschlagen (" + Ops.clip(out.trim(), 120) + ") - Ereignisse bleiben im Fehler-Topic", System.currentTimeMillis() - t0);
+            Properties p = replayState(); p.setProperty(dlq, String.valueOf(end));
+            try (Writer w = Files.newBufferedWriter(REPLAY)) { p.store(w, "BeyondFlow: bis zu diesem Offset erneut eingespielt"); } catch (IOException e) {
+                return Ops.res(false, n + " eingespielt, Stand aber nicht gespeichert: " + e.getMessage(), System.currentTimeMillis() - t0);
+            }
+            return Ops.res(true, n + " Ereignis(se) erneut nach " + target + " eingespielt", System.currentTimeMillis() - t0);
         }
 
         static String peek(String topic) {

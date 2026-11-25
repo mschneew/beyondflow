@@ -897,17 +897,20 @@ async function loadEv(fresh) {
     for (const t of d.topics || []) {
       const ab = t.abnehmer || [];
       const lag = ab.reduce((n, a) => n + (a.rueckstand || 0), 0), inactive = ab.some(a => !a.aktiv);
-      const ts = t.fehlerTopic ? (t.nachrichten > 0 ? 'warn' : 'ok') : lag > 50 ? 'error' : (lag > 0 || inactive) ? 'warn' : 'ok';
+      const offen = t.fehlerTopic ? (t.offen || 0) : 0;
+      const ts = t.fehlerTopic ? (offen > 0 ? 'warn' : 'ok') : lag > 50 ? 'error' : (lag > 0 || inactive) ? 'warn' : 'ok';
       if (ts === 'error') worst = 'error'; else if (ts === 'warn' && !worst) worst = 'warn';
       const rows = [['Nachrichten gesamt', t.nachrichten]];
-      if (t.fehlerTopic) rows.push(['Bedeutung', 'Ereignisse, die nicht verarbeitet werden konnten (7 Tage aufbewahrt)']);
+      if (t.fehlerTopic) rows.push(['Bedeutung', 'Ereignisse, die nicht verarbeitet werden konnten (7 Tage aufbewahrt)'], ['Noch nicht erneut eingespielt', offen]);
       for (const a of ab) rows.push(['Abnehmer ' + esc(a.gruppe), (a.aktiv ? 'aktiv' : '<b>nicht verbunden</b>') + ' · Rückstand ' + (a.rueckstand ?? '–')]);
       if (!ab.length && !t.fehlerTopic) rows.push(['Abnehmer', '<b>keiner</b>']);
-      cards.push(sgCard(ts, 'Topic ' + esc(t.name), t.fehlerTopic ? (t.nachrichten ? t.nachrichten + ' Fehler' : 'leer') : lag ? 'Rückstand ' + lag : 'aktuell', rows,
-        `<button class="btn ghost sm" data-peek="${esc(t.name)}">Letzte Ereignisse</button>`));
+      cards.push(sgCard(ts, 'Topic ' + esc(t.name), t.fehlerTopic ? (offen ? offen + ' offen' : 'erledigt') : lag ? 'Rückstand ' + lag : 'aktuell', rows,
+        `<button class="btn ghost sm" data-peek="${esc(t.name)}">Letzte Ereignisse</button>` +
+        (t.fehlerTopic && offen ? ` <button class="btn ghost sm" data-replay="${esc(t.name)}">Erneut einspielen</button>` : '')));
     }
     $('evCards').innerHTML = cards.join('');
     for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekEv(b.dataset.peek);
+    for (const b of document.querySelectorAll('[data-replay]')) b.onclick = () => replayEv(b.dataset.replay, b);
     $('evMeta').textContent = 'Stand ' + d.zeit + ' UTC · aktualisiert alle 30 s';
     $('evBadge').className = 'badge' + (worst ? ' show' + (worst === 'warn' ? ' warn' : '') : ''); $('evBadge').textContent = worst ? '!' : '';
   } catch (err) { $('evCards').innerHTML = '<p style="color:var(--red)">' + esc(err.message) + '</p>'; }
@@ -921,6 +924,14 @@ async function peekEv(topic) {
     $('evPeek').innerHTML = `<h3 style="margin:0">Letzte Ereignisse in ${esc(topic)}</h3>` +
       (rows ? `<table><tr><th>Offset</th><th>Zeit</th><th>Schlüssel</th><th>Inhalt</th></tr>${rows}</table>` : '<p style="color:var(--muted)">keine Ereignisse</p>');
   } catch (err) { $('evPeek').innerHTML = '<p style="color:var(--red)">' + esc(err.message) + '</p>'; }
+}
+async function replayEv(dlq, btn) {
+  const target = dlq.replace(/\.dlq$/, '');
+  if (!confirm('Die noch nicht eingespielten Ereignisse aus ' + dlq + ' erneut nach ' + target + ' schreiben? Sie werden dann noch einmal verarbeitet.')) return;
+  btn.disabled = true; btn.textContent = 'wird eingespielt …';
+  try { const r = JSON.parse(await api('/events/replay/' + encodeURIComponent(dlq), { method: 'POST' })); alert(r.message); }
+  catch (err) { alert(err.message); }
+  loadEv(true);
 }
 $('evRefresh').onclick = () => loadEv(true);
 </script>

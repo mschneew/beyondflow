@@ -1,6 +1,6 @@
 - route:
     id: event-sf-opportunity
-    description: "Ereignis: Salesforce meldet eine geaenderte Opportunity (Change Data Capture) -> sofortiger Abgleich in der Hauptlaufzeit"
+    description: "Ereignis: Salesforce meldet eine geaenderte Opportunity (Change Data Capture) -> Kafka sf.opportunity (Verarbeitung in der Hauptlaufzeit: sf-opportunity-events)"
     from:
       uri: salesforce:subscribe:/data/OpportunityChangeEvent
       parameters:
@@ -11,22 +11,36 @@
             simple: "${body} is 'java.util.Map' && ${body.containsKey('StageName')} == true"
             steps:
               - log:
-                  message: "Salesforce-Ereignis: Opportunity-Phase ${body[StageName]} -> Abgleich"
-              - removeHeaders:
-                  pattern: "*"
-              - setBody:
-                  constant: ""
-              - setHeader:
-                  name: CamelHttpMethod
-                  constant: POST
-              - to:
-                  uri: "http://127.0.0.1:8091/trigger/sf-opp-sync"
-                  parameters:
-                    throwExceptionOnFailure: "false"
-                    connectionRequestTimeout: "5000"
-              - filter:
-                  simple: "${header.CamelHttpResponseCode} != 202"
+                  message: "Salesforce-Ereignis: Opportunity-Phase ${body[StageName]} -> Kafka sf.opportunity"
+              - doTry:
                   steps:
-                    - log:
-                        loggingLevel: WARN
-                        message: "Ereignis-Eingang der Hauptlaufzeit antwortet nicht (HTTP ${header.CamelHttpResponseCode}) - der Timer holt die Opportunity spaetestens in 15 Min."
+                    - marshal:
+                        json:
+                          library: Jackson
+                    - convertBodyTo:
+                        type: java.lang.String
+                    - removeHeaders:
+                        pattern: "*"
+                    - to:
+                        uri: kafka:sf.opportunity
+                        parameters:
+                          brokers: "{{bf.kafka.brokers}}"
+                  doCatch:
+                    - exception:
+                        - java.lang.Exception
+                      steps:
+                        - log:
+                            loggingLevel: WARN
+                            message: "Kafka nicht erreichbar (${exception.message}) - Abgleich direkt anstossen"
+                        - removeHeaders:
+                            pattern: "*"
+                        - setBody:
+                            constant: ""
+                        - setHeader:
+                            name: CamelHttpMethod
+                            constant: POST
+                        - to:
+                            uri: "http://127.0.0.1:8091/trigger/sf-opp-sync"
+                            parameters:
+                              throwExceptionOnFailure: "false"
+                              connectionRequestTimeout: "5000"
