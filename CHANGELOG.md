@@ -4,6 +4,15 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.16 – 25.11.2026 – Automatisches Update
+- Timer `beyondflow-update.timer` prüft alle 10 Minuten GitHub (Branch `main`).
+- Bei neuen Commits: `git merge --ff-only`, dann `install/install.sh`. Protokoll in `logs/update.log`.
+- `install.sh` läuft ohne Terminal nicht-interaktiv:
+  - Fehlt ein Pflicht-Geheimnis, bricht er mit einem Hinweis ab, statt zu hängen.
+  - Fehlende optionale Geheimnisse überspringt er.
+- Die Prüfung des Ereignis-Eingangs erkennt `[::ffff:127.0.0.1]:8091`.
+- Abbruch in Schritt 7 behoben, der auftrat, wenn `events.properties` schon existierte.
+
 ## 0.15 – 24.11.2026 – Reproduzierbare Installation
 - Alles in diesem Repository: Quellen, Flows, Units, Konfigurationsvorlagen, DB-Skripte, Anleitung.
 - `install/install.sh`: ein idempotenter Installer für Erstinstallation und Update.

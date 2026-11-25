@@ -36,12 +36,9 @@ Arbeitsplatz ──SSH-Tunnel──► BeyondFlow-VM (OCI, ARM)
 | `docs/INSTALL.md` | **Schritt-für-Schritt-Anleitung für eine Kundeninstallation** |
 | `CHANGELOG.md` | Was sich wann geändert hat |
 
-## Schnellstart (Update einer bestehenden Installation)
+## Updates
 
-```bash
-cd ~/beyondflow-src && git pull
-bash install/install.sh            # im Studio geänderte Flows bleiben erhalten
-```
+Ein Commit auf `main` wird automatisch eingespielt: Die VM prüft alle 10 Minuten (Timer `beyondflow-update.timer`, Protokoll `logs/update.log`). Im Studio geänderte Flows bleiben erhalten.
 
 Neuinstallation beim Kunden: [docs/INSTALL.md](docs/INSTALL.md).
 

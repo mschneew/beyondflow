@@ -196,6 +196,7 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
 | `~/beyondflow/flows`, `events`, `disabled` | aktive, Ereignis- und deaktivierte Flows |
 | `~/beyondflow/history.git` | Änderungsprotokoll aller Flows (Studio und Installer) |
 | `~/beyondflow/logs/runtime.log` | Log beider Laufzeiten |
+| `~/beyondflow/logs/update.log` | Protokoll der automatischen Updates |
 | `~/beyondflow/VERSION`, `KAOTO_DIGEST` | installierte Version, Kaoto-Stand |
 
 ---
@@ -213,6 +214,14 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
 
 ## 8. Updates
 
+Updates laufen **automatisch**:
+- Der Timer `beyondflow-update.timer` prüft alle 10 Minuten, ob auf GitHub neue Commits liegen.
+- Wenn ja, holt er sie und führt `install/install.sh` aus.
+- Dabei starten die Laufzeiten kurz neu; Timer-Flows holen Versäumtes beim nächsten Lauf nach.
+- Protokoll: `~/beyondflow/logs/update.log`
+- Abschalten: `systemctl --user disable --now beyondflow-update.timer`, oder dauerhaft `BF_AUTO_UPDATE=no` in `~/beyondflow.conf`.
+
+Von Hand, etwa um neue Geheimnisse einzugeben:
 ```bash
 cd ~/beyondflow-src && git pull && bash install/install.sh
 ```

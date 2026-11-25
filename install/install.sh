@@ -155,13 +155,14 @@ S=$B/config/secrets.env
 touch $S && chmod 600 $S
 secret() { # secret NAME "Frage" [optional]
   grep -q "^$1=." $S && return
+  if [ ! -t 0 ]; then [ -n "${3:-}" ] && return; echo "Geheimnis $1 fehlt – install.sh einmal von Hand ausfuehren"; exit 1; fi
   read -rsp "$2${3:+ (Enter = ueberspringen)}: " v; echo
   [ -z "$v" ] && { [ -n "${3:-}" ] && return; echo "Pflichtwert"; exit 1; }
   sed -i "/^$1=/d" $S; printf '%s=%s\n' "$1" "$v" >> $S
 }
 secret BF_CRM_DB_PASSWORD "Passwort des DB-Benutzers $BF_DB_USER"
 if [ -n "$BF_SNOW_INSTANCE" ]; then
-  grep -q '^BF_SNOW_USER=.' $S || { read -rp "ServiceNow-Integrationsbenutzer: " v; sed -i '/^BF_SNOW_USER=/d' $S; echo "BF_SNOW_USER=$v" >> $S; }
+  grep -q '^BF_SNOW_USER=.' $S || [ ! -t 0 ] || { read -rp "ServiceNow-Integrationsbenutzer: " v; sed -i '/^BF_SNOW_USER=/d' $S; echo "BF_SNOW_USER=$v" >> $S; }
   secret BF_SNOW_PASSWORD "ServiceNow-Passwort"
 fi
 if [ -n "$BF_SF_URL" ]; then
@@ -179,6 +180,13 @@ if [ -n "$BF_SF_URL" ]; then cp "$SRC/systemd/beyondflow-events.service" $U/; EV
 systemctl --user daemon-reload
 systemctl --user enable beyondflow-studio beyondflow-api beyondflow-runtime >/dev/null 2>&1
 [ $EVENTS = 1 ] && systemctl --user enable beyondflow-events >/dev/null 2>&1
+# Automatisches Update nur, wenn das Repo unter ~/beyondflow-src liegt (Standard laut Anleitung)
+if [ "$SRC" = "$HOME/beyondflow-src" ] && [ "${BF_AUTO_UPDATE:-yes}" = yes ]; then
+  cp "$SRC/systemd/beyondflow-update.service" "$SRC/systemd/beyondflow-update.timer" $U/
+  systemctl --user daemon-reload
+  systemctl --user enable --now beyondflow-update.timer >/dev/null 2>&1
+  echo "automatisches Update: alle 10 Minuten (Protokoll logs/update.log)"
+fi
 echo "$VERSION" > $B/VERSION
 
 # Aenderungsprotokoll der Flows (gleiche Historie wie beim Speichern im Studio)

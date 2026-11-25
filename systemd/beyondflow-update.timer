@@ -1,0 +1,10 @@
+[Unit]
+Description=BeyondFlow alle 10 Minuten auf Updates pruefen
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=10min
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
