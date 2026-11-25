@@ -1,0 +1,34 @@
+- route:
+    id: snow-events-in
+    description: "Ereignis-Eingang ServiceNow: gepruefte Aenderungsmeldung (von der API, Signatur geprueft) -> Kafka-Topic snow.events"
+    from:
+      uri: platform-http:/ingest/snow
+      parameters:
+        httpMethodRestrict: POST
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setHeader:
+            name: bfKey
+            jq:
+              expression: .sys_id
+              resultType: java.lang.String
+        - removeHeaders:
+            pattern: "*"
+            excludePattern: bfKey
+        - setHeader:
+            name: CamelKafkaKey
+            simple: "${header.bfKey}"
+        - removeHeader:
+            name: bfKey
+        - to:
+            uri: kafka:snow.events
+            parameters:
+              brokers: "{{bf.kafka.brokers}}"
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - setBody:
+            constant: '{"ok":true}'

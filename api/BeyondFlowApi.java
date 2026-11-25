@@ -65,6 +65,8 @@ public class BeyondFlowApi {
         });
         for (String c : new String[]{ "/api/insights", "/api/check", "/api/pause", "/api/resume" }) s.createContext(c, Ops::handle);
         s.createContext("/api/sapgw/", SapGw::handle);
+        s.createContext("/api/ingest/servicenow", Ingest::handle);   // oeffentlich ueber bf-edge (HTTPS 443)
+        s.createContext("/api/events/", Events::handle);
         // Pruefabfragen ins CRM (nur lesend): /api/crm/check/{typ}/{key} -> Flow crm-check auf 127.0.0.1:8091
         s.createContext("/api/crm/check/", ex -> {
             if (!ex.getRequestMethod().equals("GET")) { send(ex, 405, "text/plain", "Methode nicht erlaubt"); return; }
@@ -227,7 +229,7 @@ public class BeyondFlowApi {
             String path = ex.getRequestURI().getPath().replaceAll("/+$", "");
             String m = ex.getRequestMethod();
             try {
-                if (path.equals("/api/sapgw/status") && m.equals("GET")) { send(ex, 200, "application/json; charset=utf-8", status()); return; }
+                if (path.equals("/api/sapgw/status") && m.equals("GET")) { send(ex, 200, "application/json", status()); return; }
                 if (!m.equals("POST")) { send(ex, 405, "text/plain", "Methode nicht erlaubt"); return; }
                 String act = path.substring("/api/sapgw/".length());
                 String r;
@@ -237,7 +239,7 @@ public class BeyondFlowApi {
                     default: send(ex, 404, "text/plain", "Unbekannt"); return;
                 }
                 audit(act, r);
-                send(ex, 200, "application/json; charset=utf-8", r);
+                send(ex, 200, "application/json", r);
             } catch (Exception e) {
                 send(ex, 500, "application/json", Ops.res(false, "Fehler: " + e, 0));
             }
@@ -317,6 +319,188 @@ public class BeyondFlowApi {
             for (int i = acts.size() - 1, n = 0; i >= 0; i--, n++) b.append(n > 0 ? "," : "").append(Ops.js(acts.get(i)));
             b.append("],\"zeit\":").append(Ops.js(java.time.LocalTime.now().withNano(0).toString())).append("}");
             return b.toString();
+        }
+    }
+
+    // ---------- Ereignis-Eingang ServiceNow (oeffentlich ueber bf-edge) ----------
+    // ServiceNow meldet nur "Datensatz X in Tabelle Y geaendert" (keine Inhalte). Die Meldung ist signiert:
+    //   X-BF-Timestamp: Unix-Sekunden, X-BF-Signature: Base64(HMAC-SHA256(Schluessel, Timestamp + "." + Body))
+    // Schluessel: BF_SNOW_HMAC (Base64) in secrets.env, gleicher Wert in der ServiceNow-Systemeigenschaft.
+    // Gepruefte Meldungen gehen an die Laufzeit (127.0.0.1:8091/ingest/snow) und von dort ins Kafka-Topic snow.events.
+    static class Ingest {
+        static final Path LOGF = BASE.resolve("logs/ingest.log");
+        static final java.util.concurrent.atomic.AtomicLong ACCEPTED = new java.util.concurrent.atomic.AtomicLong(),
+            REJECTED = new java.util.concurrent.atomic.AtomicLong(), FAILED = new java.util.concurrent.atomic.AtomicLong();
+        static volatile String lastAccepted, lastRejected;
+        static final Pattern SYSID = Pattern.compile("[0-9a-f]{32}");
+        static final Set<String> TABLES = Set.of("customer_account", "customer_contact");
+        static final Set<String> OPS = Set.of("insert", "update", "delete");
+
+        static String field(String json, String name) {
+            java.util.regex.Matcher m = Pattern.compile("\"" + name + "\"\\s*:\\s*\"([^\"\\\\]{0,64})\"").matcher(json);
+            return m.find() ? m.group(1) : null;
+        }
+
+        static void handle(HttpExchange ex) throws IOException {
+            String ip = ex.getRequestHeaders().getFirst("X-Forwarded-For");
+            if (ip == null) ip = ex.getRemoteAddress().getAddress().getHostAddress();
+            if (!ex.getRequestMethod().equals("POST")) { send(ex, 405, "text/plain", "nur POST"); return; }
+            byte[] raw = ex.getRequestBody().readNBytes(16385);
+            if (raw.length > 16384) { reject(ex, ip, 413, "zu gross"); return; }
+            String body = new String(raw, StandardCharsets.UTF_8);
+            String key = Ops.secrets().get("BF_SNOW_HMAC");
+            if (key == null || key.isBlank()) { reject(ex, ip, 503, "Signaturschluessel BF_SNOW_HMAC fehlt"); return; }
+            String ts = ex.getRequestHeaders().getFirst("X-BF-Timestamp"), sig = ex.getRequestHeaders().getFirst("X-BF-Signature");
+            if (ts == null || sig == null) { reject(ex, ip, 401, "Signatur fehlt"); return; }
+            long t;
+            try { t = Long.parseLong(ts.trim()); } catch (NumberFormatException e) { reject(ex, ip, 401, "Zeitstempel ungueltig"); return; }
+            if (Math.abs(System.currentTimeMillis() / 1000 - t) > 300) { reject(ex, ip, 401, "Zeitstempel ausserhalb 5 Min."); return; }
+            try {
+                javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+                mac.init(new javax.crypto.spec.SecretKeySpec(Base64.getDecoder().decode(key.trim()), "HmacSHA256"));
+                byte[] exp = mac.doFinal((ts.trim() + "." + body).getBytes(StandardCharsets.UTF_8));
+                byte[] got = Base64.getDecoder().decode(sig.trim());
+                if (!java.security.MessageDigest.isEqual(exp, got)) { reject(ex, ip, 401, "Signatur falsch"); return; }
+            } catch (Exception e) { reject(ex, ip, 401, "Signatur nicht pruefbar"); return; }
+            String table = field(body, "table"), sysId = field(body, "sys_id"), op = field(body, "operation");
+            if (table == null || !TABLES.contains(table) || sysId == null || !SYSID.matcher(sysId).matches() || op == null || !OPS.contains(op)) {
+                reject(ex, ip, 400, "Inhalt ungueltig"); return;
+            }
+            String ev = "{\"table\":\"" + table + "\",\"sys_id\":\"" + sysId + "\",\"operation\":\"" + op
+                + "\",\"source\":\"servicenow\",\"received\":\"" + Instant.now().toString() + "\"}";
+            String[] r = Ops.http(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:8091/ingest/snow"))
+                .header("Content-Type", "application/json").POST(java.net.http.HttpRequest.BodyPublishers.ofString(ev)));
+            if (!r[0].equals("200")) {
+                FAILED.incrementAndGet();
+                log(ip, "FEHLER " + table + " " + sysId + " " + op + " -> Laufzeit HTTP " + r[0]);
+                send(ex, 503, "application/json", "{\"ok\":false,\"message\":\"voruebergehend nicht verfuegbar\"}");
+                return;
+            }
+            ACCEPTED.incrementAndGet();
+            lastAccepted = Instant.now().toString();
+            log(ip, "OK " + table + " " + sysId + " " + op);
+            send(ex, 202, "application/json", "{\"ok\":true}");
+        }
+
+        static void reject(HttpExchange ex, String ip, int code, String why) throws IOException {
+            REJECTED.incrementAndGet();
+            lastRejected = Instant.now() + " " + why;
+            log(ip, "ABGELEHNT (" + code + ") " + why);
+            send(ex, code, "application/json", "{\"ok\":false}");   // Grund nur im Protokoll, nicht nach aussen
+        }
+
+        static void log(String ip, String msg) {
+            try {
+                Files.write(LOGF, (Instant.now().toString() + "  " + Ops.clip(ip, 45) + "  " + msg + "\n").getBytes(StandardCharsets.UTF_8),
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (IOException ignore) {}
+        }
+
+        static String stats() {
+            return "{\"angenommen\":" + ACCEPTED.get() + ",\"abgelehnt\":" + REJECTED.get() + ",\"fehler\":" + FAILED.get()
+                + ",\"letzteAnnahme\":" + Ops.js(lastAccepted) + ",\"letzteAblehnung\":" + Ops.js(lastRejected) + "}";
+        }
+    }
+
+    // ---------- Reiter "Ereignisse": Kafka-Topics, Abnehmer, Rueckstand ----------
+    // Liest ueber die Kafka-Werkzeuge im Container bf-kafka (kein zusaetzlicher Client in der API).
+    static class Events {
+        static final String K = "/opt/kafka/bin/", BS = " --bootstrap-server 127.0.0.1:9092";
+        static final Pattern TOPIC = Pattern.compile("[A-Za-z0-9._-]{1,120}");
+        static volatile String cache; static volatile long cacheAt;
+
+        static void handle(HttpExchange ex) throws IOException {
+            String path = ex.getRequestURI().getPath().replaceAll("/+$", "");
+            try {
+                if (path.equals("/api/events/status")) {
+                    boolean fresh = ex.getRequestURI().getQuery() != null && ex.getRequestURI().getQuery().contains("neu");
+                    if (fresh || cache == null || System.currentTimeMillis() - cacheAt > 15000) { cache = status(); cacheAt = System.currentTimeMillis(); }
+                    send(ex, 200, "application/json", cache); return;
+                }
+                if (path.startsWith("/api/events/peek/")) {
+                    String t = path.substring("/api/events/peek/".length());
+                    if (!TOPIC.matcher(t).matches()) { send(ex, 400, "text/plain", "Topic ungueltig"); return; }
+                    send(ex, 200, "application/json", peek(t)); return;
+                }
+                send(ex, 404, "text/plain", "Unbekannt");
+            } catch (Exception e) { send(ex, 500, "application/json", Ops.res(false, "Fehler: " + e, 0)); }
+        }
+
+        static String kx(int timeout, String sh) { return run(HOME.toFile(), timeout, "podman", "exec", "bf-kafka", "sh", "-c", sh); }
+
+        static Map<String, Long> offsets(String topicArg) {
+            Map<String, Long> m = new TreeMap<>();
+            for (String l : kx(40, K + "kafka-get-offsets.sh" + BS + topicArg + " 2>/dev/null").split("\n")) {
+                String[] f = l.trim().split(":");
+                if (f.length == 3 && !f[0].startsWith("__")) try { m.merge(f[0], Long.parseLong(f[2]), Long::sum); } catch (NumberFormatException ignore) {}
+            }
+            return m;
+        }
+
+        static String status() {
+            StringBuilder b = new StringBuilder("{");
+            String ps = run(HOME.toFile(), 10, "podman", "ps", "--filter", "name=^bf-kafka$", "--format", "{{.Status}}").trim();
+            boolean up = ps.startsWith("Up");
+            b.append("\"kafka\":{\"laeuft\":").append(up).append(",\"zustand\":").append(Ops.js(up ? ps : (ps.isEmpty() ? "nicht gestartet" : ps))).append("}");
+            b.append(",\"topics\":[");
+            if (up) {
+                Map<String, Long> end = offsets("");
+                // Abnehmergruppen: GROUP TOPIC PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG CONSUMER-ID HOST CLIENT-ID
+                Map<String, List<String>> groups = new TreeMap<>();
+                for (String l : kx(40, K + "kafka-consumer-groups.sh" + BS + " --describe --all-groups 2>/dev/null").split("\n")) {
+                    String[] f = l.trim().split("\\s+");
+                    if (f.length < 6 || f[0].equals("GROUP") || f[0].equals("Consumer")) continue;
+                    String lag = f[5].equals("-") ? "null" : f[5];
+                    boolean active = f.length > 6 && !f[6].equals("-");
+                    groups.computeIfAbsent(f[1], k -> new ArrayList<>()).add("{\"gruppe\":" + Ops.js(f[0]) + ",\"position\":" + (f[3].equals("-") ? "null" : f[3])
+                        + ",\"rueckstand\":" + lag + ",\"aktiv\":" + active + "}");
+                    end.putIfAbsent(f[1], f[4].equals("-") ? 0L : Long.parseLong(f[4]));
+                }
+                int i = 0;
+                for (Map.Entry<String, Long> e : end.entrySet()) {
+                    b.append(i++ > 0 ? "," : "").append("{\"name\":").append(Ops.js(e.getKey())).append(",\"nachrichten\":").append(e.getValue())
+                     .append(",\"fehlerTopic\":").append(e.getKey().endsWith(".dlq")).append(",\"abnehmer\":[")
+                     .append(String.join(",", groups.getOrDefault(e.getKey(), List.of()))).append("]}");
+                }
+            }
+            b.append("]");
+            // oeffentlicher Eingang
+            String host = "";
+            try { for (String l : Files.readAllLines(HOME.resolve("beyondflow.conf"))) if (l.startsWith("BF_PUBLIC_HOST=")) host = l.substring(15).replaceAll("[\"' ]|#.*", ""); } catch (IOException ignore) {}
+            b.append(",\"eingang\":{\"host\":").append(Ops.js(host));
+            Path cert = BASE.resolve("edge/certs/fullchain.pem");
+            if (!host.isEmpty() && Files.exists(cert)) {
+                String c = run(HOME.toFile(), 10, "openssl", "x509", "-noout", "-enddate", "-issuer", "-in", cert.toString());
+                String until = c.replaceAll("(?s).*notAfter=([^\n]*).*", "$1").trim(), iss = c.replaceAll("(?s).*issuer=([^\n]*).*", "$1").trim();
+                b.append(",\"zertifikatBis\":").append(Ops.js(until)).append(",\"aussteller\":").append(Ops.js(iss))
+                 .append(",\"letsencrypt\":").append(iss.contains("Let's Encrypt"));
+            }
+            String edge = run(HOME.toFile(), 10, "podman", "ps", "--filter", "name=^bf-edge$", "--format", "{{.Status}}").trim();
+            b.append(",\"edge\":").append(Ops.js(edge.isEmpty() ? "nicht gestartet" : edge)).append(",\"statistik\":").append(Ingest.stats());
+            List<String> last = new ArrayList<>();
+            try { List<String> all = Files.readAllLines(Ingest.LOGF, StandardCharsets.UTF_8); last = all.subList(Math.max(0, all.size() - 8), all.size()); } catch (IOException ignore) {}
+            b.append(",\"protokoll\":[");
+            for (int i = last.size() - 1, n = 0; i >= 0; i--, n++) b.append(n > 0 ? "," : "").append(Ops.js(last.get(i)));
+            b.append("]},\"zeit\":").append(Ops.js(Instant.now().toString().substring(11, 19))).append("}");
+            return b.toString();
+        }
+
+        static String peek(String topic) {
+            Long end = offsets(" --topic " + topic).get(topic);
+            if (end == null || end == 0) return "{\"topic\":" + Ops.js(topic) + ",\"ereignisse\":[]}";
+            long from = Math.max(0, end - 10);
+            String out = kx(40, K + "kafka-console-consumer.sh" + BS + " --topic " + topic + " --partition 0 --offset " + from
+                + " --max-messages 10 --timeout-ms 6000 --property print.timestamp=true --property print.key=true --property print.offset=true 2>/dev/null");
+            List<String> items = new ArrayList<>();
+            for (String l : out.split("\n")) {
+                // CreateTime:1764...  Offset:12  Schluessel  Wert  (durch Tabulatoren getrennt)
+                String[] f = l.split("\t", 4);
+                if (f.length < 4 || !f[0].startsWith("CreateTime:")) continue;
+                String zeit = "";
+                try { zeit = Instant.ofEpochMilli(Long.parseLong(f[0].substring(11))).toString(); } catch (NumberFormatException ignore) {}
+                items.add(0, "{\"zeit\":" + Ops.js(zeit) + ",\"offset\":" + Ops.js(f[1].replace("Offset:", "")) + ",\"schluessel\":" + Ops.js(f[2]) + ",\"wert\":" + Ops.js(Ops.clip(f[3], 2000)) + "}");
+            }
+            return "{\"topic\":" + Ops.js(topic) + ",\"ende\":" + end + ",\"ereignisse\":[" + String.join(",", items) + "]}";
         }
     }
 

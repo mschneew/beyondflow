@@ -4,6 +4,21 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.22 – 25.11.2026 – Kafka als Ereignis-Rückgrat, ServiceNow ereignisbasiert
+- **Apache Kafka 4.1.2** (KRaft, ein Knoten, ohne ZooKeeper) als Dienst `beyondflow-kafka` (Podman, nur `127.0.0.1:9092`, Daten im Volume `bf-kafka-data`, 7 Tage Aufbewahrung, 512 MB Heap). Abschaltbar mit `BF_KAFKA=no`.
+- **ServiceNow-Ereignisse:** Business Rules melden Änderungen an Accounts und Kontakten sofort (nur Tabelle und `sys_id`, signiert mit HMAC-SHA256, Zeitstempel ±5 Min.).
+  - Öffentlicher Eingang `https://<BF_PUBLIC_HOST>/ingest/servicenow` (Dienst `beyondflow-edge`, nginx). Sonst ist von außen nichts erreichbar; Studio und API bleiben hinter dem Tunnel.
+  - TLS mit Let's-Encrypt-Zertifikat für die IP-Adresse (Kurzzeit-Zertifikat, automatische Erneuerung über `beyondflow-cert.timer`, `acme.sh`).
+  - Firewall der VM: 443 → 8443, 80 → 8089 (nur ACME).
+  - Die API prüft Signatur, Zeitstempel, Tabelle und `sys_id` und protokolliert jede Meldung (`logs/ingest.log`).
+- Neue Flows:
+  - `snow-events-in`: geprüfte Meldung → Topic `snow.events` (Schlüssel `sys_id`).
+  - `snow-events-to-crm`: liest den Datensatz in ServiceNow nach und schreibt ihn ins CRM; Fehler → Topic `snow.events.dlq`.
+- `snow-accounts-to-crm` und `snow-contacts-to-crm` sind jetzt der **stündliche Abgleich** (Änderungen der letzten 65 Min.), der ebenfalls über `snow.events` läuft. Bisher alle 5 Minuten direkt ins CRM.
+- Konnektor `servicenow-query`: Header `bfSnowQuery` für Einzelabrufe.
+- Studio: neuer Reiter **Ereignisse** (Broker, öffentlicher Eingang mit Zertifikat und Statistik, Topics mit Nachrichtenzahl, Abnehmern und Rückstand, letzte 10 Ereignisse je Topic).
+- ServiceNow-Teil im Repo: `servicenow/` (Script Include, Business Rule, Anleitung).
+
 ## 0.21 – 25.11.2026 – Reiter „SAP-Gateway“ · **Gateway-Update nötig**
 - Studio: neuer Reiter **SAP-Gateway** mit Ampel für Dienst, Gateway-Prozess (inkl. SAP-Verbindung), Auftrags-Warteschlange im CRM und die beteiligten Flows; aktualisiert sich alle 15 Sekunden.
   - **Anhalten / Fortsetzen:** Das Gateway lehnt Aufträge mit HTTP 503 ab, BeyondFlow wiederholt sie später. Der Zustand überlebt einen Neustart (`~/sapgateway/PAUSED`).

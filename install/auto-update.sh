@@ -23,7 +23,7 @@ LAST=$(cat "$DONE")
     git merge -q --ff-only origin/main || { echo "Update FEHLER: lokale Aenderungen in $SRC verhindern git merge"; exit 1; }
   fi
   CHANGED=$(git diff --name-only "$LAST" "$NEW" 2>/dev/null || echo "unbekannt")
-  if [ -z "$(echo "$CHANGED" | grep -vE '^(docs/|db/)|\.md$')" ]; then
+  if [ -z "$(echo "$CHANGED" | grep -vE '^(docs/|db/|servicenow/)|\.md$')" ]; then
     echo "Nur Dokumentation/DB-Skripte geaendert – kein Installer-Lauf, keine Unterbrechung"
     echo "$NEW" > "$DONE"; exit 0
   fi

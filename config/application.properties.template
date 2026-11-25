@@ -7,6 +7,7 @@ camel.beans.crmdb.password={{env:BF_CRM_DB_PASSWORD}}
 bf.sap.gateway=@BF_SAP_GATEWAY@
 bf.sf.url=@BF_SF_URL@
 bf.snow.instance=@BF_SNOW_INSTANCE@
+bf.kafka.brokers=127.0.0.1:9092
 # Ereignis-Eingang nur lokal
 camel.server.enabled=true
 camel.server.host=127.0.0.1

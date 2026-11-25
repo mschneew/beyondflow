@@ -200,6 +200,51 @@ if [ "$SRC" = "$HOME/beyondflow-src" ] && [ "${BF_AUTO_UPDATE:-yes}" = yes ]; th
   systemctl --user enable --now beyondflow-update.timer >/dev/null 2>&1
   echo "automatisches Update: alle 10 Minuten (Protokoll logs/update.log)"
 fi
+
+# Ereignis-Broker Apache Kafka (nur 127.0.0.1:9092). Abschalten: BF_KAFKA=no in beyondflow.conf
+if [ "${BF_KAFKA:-yes}" = yes ]; then
+  KIMG=$(sed -n 's|^  docker.io/apache/kafka:|docker.io/apache/kafka:|p' "$SRC/systemd/beyondflow-kafka.service")
+  podman image exists "$KIMG" || { echo "lade $KIMG ..."; podman pull -q "$KIMG" >/dev/null; }
+  KCHG=0; cmp -s "$SRC/systemd/beyondflow-kafka.service" $U/beyondflow-kafka.service || KCHG=1
+  cp "$SRC/systemd/beyondflow-kafka.service" $U/
+  systemctl --user daemon-reload
+  systemctl --user enable beyondflow-kafka >/dev/null 2>&1
+  if [ $KCHG = 1 ]; then systemctl --user restart beyondflow-kafka; else systemctl --user start beyondflow-kafka; fi
+  echo "Ereignis-Broker: Apache Kafka ($KIMG)"
+fi
+
+# Oeffentlicher Ereignis-Eingang (nur mit BF_PUBLIC_HOST): HTTPS 443 -> 8443, ACME 80 -> 8089
+BF_PUBLIC_HOST=${BF_PUBLIC_HOST:-}
+if [ -n "$BF_PUBLIC_HOST" ]; then
+  E=$B/edge
+  mkdir -p $E/certs $E/acme && chmod 700 $E/certs && chmod 755 $E $E/acme
+  cp "$SRC/edge/edge.conf" "$SRC/edge/cert.sh" $E/ && chmod 644 $E/edge.conf
+  if [ ! -f $E/certs/fullchain.pem ]; then   # Platzhalter, bis Let's Encrypt geliefert hat
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 7 -subj "/CN=$BF_PUBLIC_HOST" \
+      -keyout $E/certs/key.pem -out $E/certs/fullchain.pem 2>/dev/null
+    chmod 600 $E/certs/key.pem
+  fi
+  if [ ! -x ~/.acme.sh/acme.sh ]; then
+    rm -rf /tmp/bf-acme && git clone -q --depth 1 https://github.com/acmesh-official/acme.sh.git /tmp/bf-acme
+    (cd /tmp/bf-acme && ./acme.sh --install --home ~/.acme.sh --nocron --noprofile >/dev/null) && rm -rf /tmp/bf-acme
+    echo "acme.sh installiert (~/.acme.sh)"
+  fi
+  if systemctl is-active --quiet firewalld; then
+    for m in 443:8443 80:8089; do
+      sudo firewall-cmd --quiet --permanent --add-forward-port=port=${m%%:*}:proto=tcp:toport=${m##*:} 2>/dev/null || true
+    done
+    sudo firewall-cmd --quiet --reload
+    echo "Firewall: 443 -> 8443, 80 -> 8089 (zusaetzlich OCI Security List: 443 und 80 eingehend)"
+  fi
+  grep -q '^BF_SNOW_HMAC=.' $S || { echo "BF_SNOW_HMAC=$(openssl rand -base64 32)" >> $S; echo "Signaturschluessel fuer ServiceNow-Ereignisse erzeugt (BF_SNOW_HMAC in secrets.env)"; }
+  cp "$SRC/systemd/beyondflow-edge.service" "$SRC/systemd/beyondflow-cert.service" "$SRC/systemd/beyondflow-cert.timer" $U/
+  systemctl --user daemon-reload
+  systemctl --user enable beyondflow-edge >/dev/null 2>&1
+  systemctl --user restart beyondflow-edge
+  systemctl --user enable --now beyondflow-cert.timer >/dev/null 2>&1
+  systemctl --user start --no-block beyondflow-cert.service
+  echo "Ereignis-Eingang: https://$BF_PUBLIC_HOST/ingest/servicenow (Zertifikat: logs/cert.log)"
+fi
 echo "$VERSION" > $B/VERSION
 
 # Aenderungsprotokoll der Flows (gleiche Historie wie beim Speichern im Studio)
@@ -217,11 +262,14 @@ if [ $RESTART = 1 ]; then
 fi
 ok=1
 chk() { if eval "$2" >/dev/null 2>&1; then echo "  OK    $1"; else echo "  FEHLER $1"; ok=0; fi; }
+warn() { if eval "$2" >/dev/null 2>&1; then echo "  OK    $1"; else echo "  WARNUNG $1 (startet evtl. noch)"; fi; }   # kein Abbruch
 chk "Studio (127.0.0.1:8080)"     "curl -sf http://127.0.0.1:8080/studio.html"
 chk "API (127.0.0.1:8090)"        "curl -sf http://127.0.0.1:8090/api/version"
 chk "Laufzeit aktiv"              "systemctl --user is-active beyondflow-runtime"
 chk "Ereignis-Eingang 8091"       "ss -ltn | grep -qE '127\.0\.0\.1\]?:8091'"
 [ $EVENTS = 1 ] && chk "Ereignis-Laufzeit aktiv" "systemctl --user is-active beyondflow-events"
+[ "${BF_KAFKA:-yes}" = yes ] && warn "Kafka (127.0.0.1:9092)" "ss -ltn | grep -qE '127\.0\.0\.1\]?:9092'"
+[ -n "$BF_PUBLIC_HOST" ] && warn "Ereignis-Eingang (8443)" "curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:8443/ingest/servicenow | grep -qE '40[35]'"
 grep -E "Routes startup|Error starting" $B/logs/runtime.log 2>/dev/null | tail -2 || true
 echo
 echo "Installiert: BeyondFlow $(curl -s http://127.0.0.1:8090/api/version 2>/dev/null || echo "$VERSION")"

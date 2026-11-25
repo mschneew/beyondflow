@@ -1,15 +1,15 @@
 - route:
     id: snow-accounts-to-crm
-    description: "ServiceNow customer_account -> BeyondCRM Account"
+    description: "Abgleich ServiceNow customer_account -> Kafka snow.events (stuendlich; Echtzeit kommt ueber snow-events-in)"
     from:
       uri: timer:snow-accounts
       parameters:
-        period: "300000"
+        period: "3600000"
         includeMetadata: "true"
         delay: "15000"
       steps:
         - choice:
-            description: "Erster Lauf nach dem Start: Vollabgleich der letzten 50; danach nur in den letzten 15 Min. geaenderte Datensaetze (Takt 5 Min.)"
+            description: "Erster Lauf nach dem Start: Vollabgleich der letzten 50; danach stuendlich die in den letzten 65 Min. geaenderten (Absicherung, falls ein Ereignis fehlt)"
             when:
               - simple: "${header.CamelTimerCounter} == 1"
                 steps:
@@ -25,34 +25,31 @@
                     parameters:
                       table: customer_account
                       fields: sys_id,name,number,city,phone,website
-                      query: "sys_updated_onRELATIVEGE@minute@ago@15^ORDERBYDESCsys_updated_on"
+                      query: "sys_updated_onRELATIVEGE@minute@ago@65^ORDERBYDESCsys_updated_on"
         - split:
             jq:
               expression: .result
             steps:
               - setHeader:
-                  name: bfLabel
+                  name: bfKey
                   jq:
-                    expression: .name
+                    expression: .sys_id
                     resultType: java.lang.String
               - setBody:
-                  description: "Mapping ServiceNow customer_account -> CRM Account (S_ORG_EXT)"
+                  description: "Als Ereignis mit mitgeliefertem Datensatz ins Topic (Verarbeitung: snow-events-to-crm)"
                   jq:
-                    expression: |-
-                      {
-                        "_EXT_ID": .sys_id,
-                        "NAME": .name,
-                        "OU_NUM": .number,
-                        "LOC": .city,
-                        "MAIN_PH_NUM": .phone,
-                        "URL": .website,
-                        "OU_TYPE_CD": "Kunde",
-                        "CUST_STAT_CD": "Kunde"
-                      }
+                    expression: '{table: "customer_account", sys_id: .sys_id, operation: "abgleich", source: "abgleich", record: .}'
+              - convertBodyTo:
+                  type: java.lang.String
+              - removeHeaders:
+                  pattern: "*"
+                  excludePattern: bfKey
+              - setHeader:
+                  name: CamelKafkaKey
+                  simple: "${header.bfKey}"
+              - removeHeader:
+                  name: bfKey
               - to:
-                  uri: kamelet:beyondcrm-upsert
+                  uri: kafka:snow.events
                   parameters:
-                    entity: Account
-                    system: SNOW
-              - log:
-                  message: "Account ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]}"
+                    brokers: "{{bf.kafka.brokers}}"

@@ -1,0 +1,166 @@
+- route:
+    id: snow-events-to-crm
+    description: "Kafka snow.events -> BeyondCRM: liest den geaenderten Datensatz aus ServiceNow nach und schreibt ihn ins CRM (Account oder Kontakt)"
+    from:
+      uri: kafka:snow.events
+      parameters:
+        brokers: "{{bf.kafka.brokers}}"
+        groupId: bf-snow-to-crm
+        autoOffsetReset: earliest
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setProperty:
+            name: bfEvent
+            simple: "${body}"
+        - setProperty:
+            name: bfTable
+            jq:
+              expression: .table
+              resultType: java.lang.String
+        - setProperty:
+            name: bfSysId
+            jq:
+              expression: .sys_id
+              resultType: java.lang.String
+        - setProperty:
+            name: bfOp
+            jq:
+              expression: .operation
+              resultType: java.lang.String
+        - setProperty:
+            name: bfSource
+            jq:
+              expression: '.source // "servicenow"'
+              resultType: java.lang.String
+        - doTry:
+            steps:
+              - choice:
+                  when:
+                    - simple: "${exchangeProperty.bfOp} == 'delete'"
+                      steps:
+                        - log:
+                            message: "ServiceNow ${exchangeProperty.bfTable} ${exchangeProperty.bfSysId} geloescht - CRM-Datensatz bleibt unveraendert"
+                        - stop: {}
+              - choice:
+                  description: "Datensatz mitgeliefert (Abgleich) oder aus ServiceNow nachlesen (Ereignis)"
+                  when:
+                    - jq:
+                        expression: 'has("record")'
+                      steps:
+                        - setBody:
+                            jq:
+                              expression: .record
+                  otherwise:
+                    steps:
+                      - setHeader:
+                          name: bfSnowQuery
+                          simple: "sys_id%3D${exchangeProperty.bfSysId}"
+                      - choice:
+                          when:
+                            - simple: "${exchangeProperty.bfTable} == 'customer_account'"
+                              steps:
+                                - to:
+                                    uri: kamelet:servicenow-query
+                                    parameters:
+                                      table: customer_account
+                                      fields: sys_id,name,number,city,phone,website
+                          otherwise:
+                            steps:
+                              - to:
+                                  uri: kamelet:servicenow-query
+                                  parameters:
+                                    table: customer_contact
+                                    fields: sys_id,first_name,last_name,title,email,phone,mobile_phone,account,active
+                      - filter:
+                          jq:
+                            expression: '(.result | length) == 0'
+                          steps:
+                            - log:
+                                loggingLevel: WARN
+                                message: "ServiceNow ${exchangeProperty.bfTable} ${exchangeProperty.bfSysId}: Datensatz nicht lesbar - uebersprungen"
+                            - stop: {}
+                      - setBody:
+                          jq:
+                            expression: ".result[0]"
+              - choice:
+                  when:
+                    - simple: "${exchangeProperty.bfTable} == 'customer_account'"
+                      steps:
+                        - setHeader:
+                            name: bfLabel
+                            jq:
+                              expression: .name
+                              resultType: java.lang.String
+                        - setBody:
+                            description: "Mapping ServiceNow customer_account -> CRM Account (S_ORG_EXT)"
+                            jq:
+                              expression: |-
+                                {
+                                  "_EXT_ID": .sys_id,
+                                  "NAME": .name,
+                                  "OU_NUM": .number,
+                                  "LOC": .city,
+                                  "MAIN_PH_NUM": .phone,
+                                  "URL": .website,
+                                  "OU_TYPE_CD": "Kunde",
+                                  "CUST_STAT_CD": "Kunde"
+                                }
+                        - to:
+                            uri: kamelet:beyondcrm-upsert
+                            parameters:
+                              entity: Account
+                              system: SNOW
+                        - log:
+                            message: "Account ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]} (${exchangeProperty.bfSource})"
+                  otherwise:
+                    steps:
+                      - setHeader:
+                          name: bfLabel
+                          jq:
+                            expression: '(.first_name + " " + .last_name)'
+                            resultType: java.lang.String
+                      - setBody:
+                          description: "Mapping ServiceNow customer_contact -> CRM Contact (S_CONTACT)"
+                          jq:
+                            expression: |-
+                              {
+                                "_EXT_ID": .sys_id,
+                                "FST_NAME": .first_name,
+                                "LAST_NAME": .last_name,
+                                "JOB_TITLE": .title,
+                                "EMAIL_ADDR": .email,
+                                "WORK_PH_NUM": .phone,
+                                "CELL_PH_NUM": .mobile_phone,
+                                "_LOOKUP:S_ORG_EXT:PR_DEPT_OU_ID": .account,
+                                "CONSENT_STAT_CD": "Unbekannt",
+                                "ACTIVE_FLG": (if .active == "true" then "Y" else "N" end)
+                              }
+                      - to:
+                          uri: kamelet:beyondcrm-upsert
+                          parameters:
+                            entity: Contact
+                            system: SNOW
+                      - log:
+                          message: "Kontakt ${header.bfLabel} -> CRM ${body[crmAction]} ${body[crmRowId]} (${exchangeProperty.bfSource})"
+            doCatch:
+              - exception:
+                  - java.lang.Exception
+                steps:
+                  - log:
+                      loggingLevel: ERROR
+                      message: "ServiceNow-Ereignis ${exchangeProperty.bfTable} ${exchangeProperty.bfSysId} nicht verarbeitet: ${exception.message} - abgelegt in snow.events.dlq"
+                  - setBody:
+                      simple: "${exchangeProperty.bfEvent}"
+                  - removeHeaders:
+                      pattern: "*"
+                  - setHeader:
+                      name: CamelKafkaKey
+                      simple: "${exchangeProperty.bfSysId}"
+                  - setHeader:
+                      name: bfFehler
+                      simple: "${exception.message}"
+                  - to:
+                      uri: kafka:snow.events.dlq
+                      parameters:
+                        brokers: "{{bf.kafka.brokers}}"

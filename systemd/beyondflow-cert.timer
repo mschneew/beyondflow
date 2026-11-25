@@ -1,0 +1,10 @@
+[Unit]
+Description=BeyondFlow TLS-Zertifikat stuendlich pruefen (Erneuerung nach ca. 3 Tagen)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

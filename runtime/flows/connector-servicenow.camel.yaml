@@ -17,6 +17,10 @@
     from:
       uri: kamelet:source
       steps:
+        - setProperty:
+            name: bfSnowQuery
+            description: "Optional: Header bfSnowQuery (z. B. sys_id%3D<id>) ersetzt die feste Abfrage, fuer Einzelabrufe aus Ereignissen"
+            simple: "${header.bfSnowQuery}"
         - removeHeaders:
             pattern: "*"
         - setHeader:
@@ -25,6 +29,12 @@
         - setHeader:
             name: Accept
             constant: application/json
+        - filter:
+            simple: "${exchangeProperty.bfSnowQuery} != null && ${exchangeProperty.bfSnowQuery} != ''"
+            steps:
+              - setHeader:
+                  name: CamelHttpQuery
+                  simple: "sysparm_query=${exchangeProperty.bfSnowQuery}&sysparm_fields={{fields}}&sysparm_limit=1&sysparm_exclude_reference_link=true"
         - to:
             uri: "https://{{instance}}.service-now.com/api/now/table/{{table}}"
             parameters:
@@ -58,6 +68,12 @@
               - setHeader:
                   name: Accept
                   constant: application/json
+              - filter:
+                  simple: "${exchangeProperty.bfSnowQuery} != null && ${exchangeProperty.bfSnowQuery} != ''"
+                  steps:
+                    - setHeader:
+                        name: CamelHttpQuery
+                        simple: "sysparm_query=${exchangeProperty.bfSnowQuery}&sysparm_fields={{fields}}&sysparm_limit=1&sysparm_exclude_reference_link=true"
               - to:
                   uri: "https://{{instance}}.service-now.com/api/now/table/{{table}}"
                   parameters:

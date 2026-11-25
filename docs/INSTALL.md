@@ -35,7 +35,8 @@ Zeitbedarf: etwa einen halben Tag, ohne Wartezeiten beim Kunden (Benutzer, Freis
 ### 1.1 BeyondFlow-VM
 - **Shape:** VM.Standard.A1.Flex (ARM), 2 OCPU, 12 GB RAM, Image **Oracle Linux 9**.
 - **Netz:** privates Subnetz des VCN, mit öffentlicher IP *oder* nur über Bastion erreichbar.
-- **Eingehend genügt SSH (22).** Studio, API und Laufzeit hören nur auf `127.0.0.1`.
+- **Eingehend genügt SSH (22).** Studio, API, Laufzeit und Kafka hören nur auf `127.0.0.1`.
+- Nur für ServiceNow-Ereignisse zusätzlich **443 und 80** eingehend (Security List), siehe Abschnitt 4.1.
 - Den SSH-Schlüssel beim Anlegen erzeugen und sicher ablegen. Benutzer: `opc`.
 
 ### 1.2 SAP-Gateway-VM (nur mit SAP)
@@ -132,6 +133,23 @@ Den TNS-Alias (meist `<db>_low`) aus `tnsnames.ora` im ZIP notieren.
 2. Rollen: Lesezugriff auf `customer_account` und `customer_contact`, z. B. `snc_platform_rest_api_access` plus eine Rolle mit Leserecht auf diese Tabellen.
 3. Den Instanznamen (`<instanz>` aus `<instanz>.service-now.com`) als `BF_SNOW_INSTANCE` notieren.
 
+### 4.1 Ereignisse aus ServiceNow (empfohlen)
+
+Ohne Ereignisse gleicht BeyondFlow ServiceNow stündlich ab. Mit Ereignissen kommt jede Änderung an Accounts und Kontakten nach wenigen Sekunden im CRM an.
+
+Ablauf: ServiceNow (Business Rule, async) → HTTPS `https://<öffentliche IP>/ingest/servicenow` → Prüfung der Signatur → Kafka-Topic `snow.events` → Flow `snow-events-to-crm` → CRM. Fehler landen im Topic `snow.events.dlq`.
+
+1. **OCI:** In der Security List des Subnetzes eingehend TCP **443** und **80** von `0.0.0.0/0` erlauben.
+   - 443: Ereignisse. Von außen ist nur dieser eine Pfad erreichbar, jede Meldung muss signiert sein.
+   - 80: nur die Zertifikatsprüfung von Let's Encrypt (`/.well-known/acme-challenge/`).
+2. In `~/beyondflow.conf`: `BF_PUBLIC_HOST=<öffentliche IP der VM>`, dann `install/install.sh` (oder auf das automatische Update warten). Der Installer
+   - richtet die Firewall-Weiterleitung 443 → 8443 und 80 → 8089 ein,
+   - startet den Eingang (`beyondflow-edge`, nginx),
+   - holt ein Let's-Encrypt-Zertifikat für die IP-Adresse. IP-Zertifikate gibt es nur als Kurzzeit-Zertifikat (gut 6 Tage); der Timer `beyondflow-cert.timer` erneuert es automatisch nach 3 Tagen (Protokoll `logs/cert.log`),
+   - erzeugt den Signaturschlüssel `BF_SNOW_HMAC` in `secrets.env`.
+3. In ServiceNow die Systemeigenschaften, das Script Include und die Business Rules einrichten: siehe [`servicenow/README.md`](../servicenow/README.md). Den Schlüssel auf der VM anzeigen mit `grep BF_SNOW_HMAC ~/beyondflow/config/secrets.env` und selbst in die Eigenschaft `beyondflow.events.hmac_key` eintragen.
+4. Prüfen im Studio, Reiter **Ereignisse**: Eingang „bereit“ mit Let's-Encrypt-Zertifikat; nach einer Änderung in ServiceNow steigt „Angenommen“, das Topic `snow.events` hat keinen Rückstand.
+
 ## 5. SAP-Gateway (optional)
 
 Auf der **SAP-Gateway-VM** (Abschnitt 1.2) als `opc`:
@@ -224,6 +242,9 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
 | `~/beyondflow/logs/runtime.log` | Log beider Laufzeiten |
 | `~/beyondflow/logs/update.log` | Protokoll der automatischen Updates |
 | `~/beyondflow/VERSION`, `KAOTO_DIGEST` | installierte Version, Kaoto-Stand |
+| Podman-Volume `bf-kafka-data` | Kafka-Daten (Topics, 7 Tage Aufbewahrung) |
+| `~/beyondflow/edge/` | Eingang: nginx-Konfiguration, Zertifikat (`certs/`), Zertifikatsskript |
+| `~/beyondflow/logs/ingest.log`, `cert.log` | angenommene und abgelehnte Ereignisse, Zertifikatserneuerung |
 
 ---
 
@@ -237,8 +258,9 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
    2. Innerhalb von Sekunden (Ereignis) bzw. 15 Minuten (Timer) muss im CRM ein Auftrag `AU-…` entstehen.
    3. Danach entsteht der SAP-Auftrag. Die Felder `BeyondCRM_Auftrag__c`, `SAP_Auftrag__c` und `ERP_Status__c` an der Opportunity sind gefüllt.
 5. **Log:** keine roten Einträge nach dem Start.
-6. **SAP-Gateway** (wenn angebunden): Im Reiter „SAP-Gateway“ sind Dienst, Gateway-Prozess und Warteschlange grün.
-7. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
+6. **Ereignisse:** Im Reiter „Ereignisse“ läuft der Broker; alle Topics ohne Rückstand.
+7. **SAP-Gateway** (wenn angebunden): Im Reiter „SAP-Gateway“ sind Dienst, Gateway-Prozess und Warteschlange grün.
+8. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
    - `http://localhost:8080/api/crm/check/auftrag/AU-2026-0408`
    - `…/account/<ROW_ID>`
    - `…/kontakt/<ROW_ID>`

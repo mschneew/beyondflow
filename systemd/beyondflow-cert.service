@@ -1,0 +1,8 @@
+[Unit]
+Description=BeyondFlow TLS-Zertifikat (Let's Encrypt, IP-Adresse, 6 Tage) holen oder erneuern
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/beyondflow/edge/cert.sh
+StandardOutput=append:%h/beyondflow/logs/cert.log
+StandardError=append:%h/beyondflow/logs/cert.log

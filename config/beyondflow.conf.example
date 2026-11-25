@@ -13,6 +13,11 @@ BF_SF_URL=https://<my-domain>.my.salesforce.com   # My-Domain-URL der Salesforce
 BF_SNOW_INSTANCE=<instanz>               # <instanz> aus <instanz>.service-now.com
 BF_SAP_GATEWAY=http://<private-ip-sap-vm>:8095   # Ausgabe von sap-gateway/install-sap-gateway.sh
 
+# --- Ereignisse ---
+BF_KAFKA=yes                             # Ereignis-Broker Apache Kafka auf dieser VM (nur lokal)
+BF_PUBLIC_HOST=                          # oeffentliche IP der VM, z. B. 92.5.x.x; leer = kein oeffentlicher Eingang
+                                         # (noetig fuer Ereignisse aus ServiceNow; OCI: 443 und 80 eingehend freigeben)
+
 # --- Versionen (fuer reproduzierbare Installationen festgeschrieben) ---
 BF_CAMEL_VERSION=4.22.0
 BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app:main   # Empfehlung: auf @sha256-Digest festschreiben (install meldet ihn)

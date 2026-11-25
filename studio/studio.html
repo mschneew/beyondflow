@@ -63,6 +63,9 @@
   .sgbar b { display:block; margin-bottom:4px; } .sgbar span { display:block; color:var(--muted); font-size:13px; margin-bottom:10px; }
   .sgbar .btn { min-height:32px; padding:6px 12px; font-size:13px; margin-right:8px; }
   .card table.kv { border-collapse:collapse; font-size:13px; width:100%; } .card table.kv td { padding:2px 0; vertical-align:top; } .card table.kv td:first-child { color:var(--muted); width:46%; }
+  #evPeek table { border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; } #evPeek td, #evPeek th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  #evPeek td.v { font-family:ui-monospace,monospace; word-break:break-all; } #evPeek { margin-top:16px; }
+  .card .btn.sm { min-height:26px; padding:3px 10px; font-size:12px; margin-top:6px; }
   #sgMsg { display:block; margin-top:12px; font-size:13px; }
   .ai .top { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px; }
   .ai .top h2 { font-size:18px; margin:0 12px 0 0; } .ai .top .meta { color:var(--muted); font-size:12px; }
@@ -150,6 +153,7 @@
     <button id="vMap">Mapping</button>
     <button id="vStatus">Laufzeit</button>
     <button id="vLogs">Log</button>
+    <button id="vEv">Ereignisse<span class="badge" id="evBadge"></span></button>
     <button id="vSap">SAP-Gateway<span class="badge" id="sapBadge"></span></button>
     <button id="vAi">Assistent<span class="badge" id="aiBadge"></span></button>
   </nav>
@@ -183,6 +187,15 @@
         </div>
         <div id="aiText"></div>
         <div class="cards" id="aiCards"><p style="color:var(--muted)">lädt …</p></div>
+      </div></div>
+      <div id="ev" class="panel"><div class="ai">
+        <div class="top">
+          <h2>Ereignisse</h2>
+          <button class="btn ghost" id="evRefresh">Aktualisieren</button>
+          <span class="meta" id="evMeta"></span>
+        </div>
+        <div class="cards" id="evCards"><p style="color:var(--muted)">lädt …</p></div>
+        <div id="evPeek"></div>
       </div></div>
       <div id="sap" class="panel"><div class="ai">
         <div class="top">
@@ -679,22 +692,25 @@ function applyMapping() {
 
 function showTab(t) {
   tab = t;
-  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vSap','sap'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
+  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vEv','ev'],['vSap','sap'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
   $('map').classList.toggle('show', t === 'map');
   $('lic').classList.toggle('show', t === 'lic');
   $('ai').classList.toggle('show', t === 'ai');
   $('sap').classList.toggle('show', t === 'sap');
+  $('ev').classList.toggle('show', t === 'ev');
+  if (t === 'ev') loadEv();
   if (t === 'sap') loadSap();
   if (t === 'ai') loadInsights();
   $('outp').classList.toggle('show', t === 'status' || t === 'logs');
   $('fltProbL').style.display = t === 'logs' ? '' : 'none';
   $('resbox').classList.toggle('show', t === 'status');
   if (t === 'map') renderMap();
-  else if (t !== 'design' && t !== 'sap' && t !== 'ai' && t !== 'lic') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
+  else if (t !== 'design' && t !== 'sap' && t !== 'ev' && t !== 'ai' && t !== 'lic') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
 }
 $('vDesign').onclick = () => showTab('design');
 $('vAi').onclick = () => showTab('ai');
 $('vSap').onclick = () => showTab('sap');
+$('vEv').onclick = () => showTab('ev');
 $('licBtn').onclick = () => showTab('lic');
 $('vMap').onclick = () => showTab('map');
 $('vStatus').onclick = () => showTab('status');
@@ -852,6 +868,61 @@ $('sgResume').onclick = () => sapAction('resume');
 $('sgStop').onclick = () => sapAction('service/stop', 'Gateway-Prozess auf der SAP-VM STOPPEN? Er startet erst wieder über „Starten“ oder einen Neustart der VM.');
 $('sgStart').onclick = () => sapAction('service/start');
 $('sgRestart').onclick = () => sapAction('service/restart', 'Gateway-Prozess neu starten? Er ist dabei ca. 10 Sekunden nicht erreichbar.');
+
+
+// ---------- Ereignisse (Kafka) ----------
+let evTimer = null;
+const utc = v => v ? String(v).replace('T', ' ').slice(0, 19) + ' UTC' : '–';
+async function loadEv(fresh) {
+  clearTimeout(evTimer);
+  if (tab !== 'ev') return;
+  try {
+    const d = JSON.parse(await api('/events/status' + (fresh ? '?neu' : '')));
+    const k = d.kafka || {}, e = d.eingang || {}, st = e.statistik || {};
+    const cards = [];
+    cards.push(sgCard(k.laeuft ? 'ok' : 'error', 'Ereignis-Broker', k.laeuft ? 'läuft' : 'aus',
+      [['Apache Kafka', esc(k.zustand)], ['Adresse', '127.0.0.1:9092 (nur lokal)'], ['Topics', (d.topics || []).length]]));
+    if (e.host) {
+      const certSt = !e.zertifikatBis ? 'error' : e.letsencrypt ? 'ok' : 'warn';
+      const est = !String(e.edge || '').startsWith('Up') ? 'error' : st.fehler > 0 ? 'warn' : certSt;
+      const prot = (e.protokoll || []).map(l => `<li>${esc(l.slice(11, 19))} ${esc(l.split('  ').slice(2).join(' '))}</li>`).join('');
+      cards.push(sgCard(est, 'Öffentlicher Eingang', est === 'ok' ? 'bereit' : est === 'warn' ? (e.letsencrypt ? 'Fehler' : 'Zertifikat ausstehend') : 'Störung',
+        [['Adresse', 'https://' + esc(e.host) + '/ingest/servicenow'], ['nginx', esc(e.edge)],
+         ['Zertifikat', e.letsencrypt ? 'Let’s Encrypt, gültig bis ' + esc(e.zertifikatBis) : 'Platzhalter (selbst signiert) – Let’s Encrypt noch nicht erhalten, siehe logs/cert.log'],
+         ['Angenommen / abgelehnt / Fehler', (st.angenommen ?? 0) + ' / ' + (st.abgelehnt ?? 0) + ' / ' + (st.fehler ?? 0) + ' (seit API-Start)'],
+         ['Letztes Ereignis', utc(st.letzteAnnahme)]],
+        prot ? `<details><summary>Protokoll (letzte 8)</summary><ul>${prot}</ul></details>` : ''));
+    } else cards.push(sgCard('idle', 'Öffentlicher Eingang', 'nicht eingerichtet', [['Hinweis', 'BF_PUBLIC_HOST in ~/beyondflow.conf setzen (siehe Anleitung)']]));
+    let worst = k.laeuft ? '' : 'error';
+    for (const t of d.topics || []) {
+      const ab = t.abnehmer || [];
+      const lag = ab.reduce((n, a) => n + (a.rueckstand || 0), 0), inactive = ab.some(a => !a.aktiv);
+      const ts = t.fehlerTopic ? (t.nachrichten > 0 ? 'warn' : 'ok') : lag > 50 ? 'error' : (lag > 0 || inactive) ? 'warn' : 'ok';
+      if (ts === 'error') worst = 'error'; else if (ts === 'warn' && !worst) worst = 'warn';
+      const rows = [['Nachrichten gesamt', t.nachrichten]];
+      if (t.fehlerTopic) rows.push(['Bedeutung', 'Ereignisse, die nicht verarbeitet werden konnten (7 Tage aufbewahrt)']);
+      for (const a of ab) rows.push(['Abnehmer ' + esc(a.gruppe), (a.aktiv ? 'aktiv' : '<b>nicht verbunden</b>') + ' · Rückstand ' + (a.rueckstand ?? '–')]);
+      if (!ab.length && !t.fehlerTopic) rows.push(['Abnehmer', '<b>keiner</b>']);
+      cards.push(sgCard(ts, 'Topic ' + esc(t.name), t.fehlerTopic ? (t.nachrichten ? t.nachrichten + ' Fehler' : 'leer') : lag ? 'Rückstand ' + lag : 'aktuell', rows,
+        `<button class="btn ghost sm" data-peek="${esc(t.name)}">Letzte Ereignisse</button>`));
+    }
+    $('evCards').innerHTML = cards.join('');
+    for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekEv(b.dataset.peek);
+    $('evMeta').textContent = 'Stand ' + d.zeit + ' UTC · aktualisiert alle 30 s';
+    $('evBadge').className = 'badge' + (worst ? ' show' + (worst === 'warn' ? ' warn' : '') : ''); $('evBadge').textContent = worst ? '!' : '';
+  } catch (err) { $('evCards').innerHTML = '<p style="color:var(--red)">' + esc(err.message) + '</p>'; }
+  evTimer = setTimeout(loadEv, 30000);
+}
+async function peekEv(topic) {
+  $('evPeek').innerHTML = '<p style="color:var(--muted)">lese die letzten Ereignisse aus ' + esc(topic) + ' …</p>';
+  try {
+    const d = JSON.parse(await api('/events/peek/' + encodeURIComponent(topic)));
+    const rows = (d.ereignisse || []).map(e => `<tr><td>${esc(e.offset)}</td><td>${utc(e.zeit)}</td><td>${esc(e.schluessel)}</td><td class="v">${esc(e.wert)}</td></tr>`).join('');
+    $('evPeek').innerHTML = `<h3 style="margin:0">Letzte Ereignisse in ${esc(topic)}</h3>` +
+      (rows ? `<table><tr><th>Offset</th><th>Zeit</th><th>Schlüssel</th><th>Inhalt</th></tr>${rows}</table>` : '<p style="color:var(--muted)">keine Ereignisse</p>');
+  } catch (err) { $('evPeek').innerHTML = '<p style="color:var(--red)">' + esc(err.message) + '</p>'; }
+}
+$('evRefresh').onclick = () => loadEv(true);
 </script>
 </body>
 </html>
