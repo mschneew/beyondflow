@@ -34,6 +34,7 @@ Arbeitsplatz ──SSH-Tunnel──► BeyondFlow-VM (OCI, ARM)
 | `db/` | SQL-Skripte für das CRM-Schema, in Nummernreihenfolge |
 | `tools/` | Windows-Skript für den Studio-Tunnel |
 | `docs/INSTALL.md` | **Schritt-für-Schritt-Anleitung für eine Kundeninstallation** |
+| `docs/referenz/` | Projektdokumente der Referenzinstallation: Übersicht, technische Benutzer, Testprotokoll, SAP-Konzept |
 | `CHANGELOG.md` | Was sich wann geändert hat |
 
 ## Updates
