@@ -40,6 +40,39 @@
         - convertBodyTo:
             type: java.lang.String
         - filter:
+            description: "Voruebergehender Fehler (HTTP 5xx, z. B. aufwachende Entwickler-Instanz): nach 3 s einmal wiederholen"
+            simple: "${header.CamelHttpResponseCode} >= 500"
+            steps:
+              - log:
+                  loggingLevel: INFO
+                  message: "ServiceNow {{table}}: HTTP ${header.CamelHttpResponseCode} - neuer Versuch in 3 s"
+              - delay:
+                  constant: 3000
+              - removeHeaders:
+                  pattern: "*"
+              - setBody:
+                  constant: ""
+              - setHeader:
+                  name: CamelHttpMethod
+                  constant: GET
+              - setHeader:
+                  name: Accept
+                  constant: application/json
+              - to:
+                  uri: "https://{{instance}}.service-now.com/api/now/table/{{table}}"
+                  parameters:
+                    sysparm_fields: "{{fields}}"
+                    sysparm_limit: "{{limit}}"
+                    sysparm_exclude_reference_link: "true"
+                    sysparm_query: "RAW({{query}})"
+                    authMethod: Basic
+                    authUsername: "RAW({{env:BF_SNOW_USER}})"
+                    authPassword: "RAW({{env:BF_SNOW_PASSWORD}})"
+                    authenticationPreemptive: "true"
+                    throwExceptionOnFailure: "false"
+              - convertBodyTo:
+                  type: java.lang.String
+        - filter:
             description: "HTTP-Fehler von ServiceNow"
             simple: "${header.CamelHttpResponseCode} >= 300"
             steps:

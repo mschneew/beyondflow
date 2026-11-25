@@ -5,13 +5,27 @@
       uri: timer:snow-accounts
       parameters:
         period: "300000"
+        includeMetadata: "true"
         delay: "15000"
       steps:
-        - to:
-            uri: kamelet:servicenow-query
-            parameters:
-              table: customer_account
-              fields: sys_id,name,number,city,phone,website
+        - choice:
+            description: "Erster Lauf nach dem Start: Vollabgleich der letzten 50; danach nur in den letzten 15 Min. geaenderte Datensaetze (Takt 5 Min.)"
+            when:
+              - simple: "${header.CamelTimerCounter} == 1"
+                steps:
+                  - to:
+                      uri: kamelet:servicenow-query
+                      parameters:
+                        table: customer_account
+                        fields: sys_id,name,number,city,phone,website
+            otherwise:
+              steps:
+                - to:
+                    uri: kamelet:servicenow-query
+                    parameters:
+                      table: customer_account
+                      fields: sys_id,name,number,city,phone,website
+                      query: "sys_updated_onRELATIVEGE@minute@ago@15^ORDERBYDESCsys_updated_on"
         - split:
             jq:
               expression: .result

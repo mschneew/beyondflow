@@ -5,13 +5,27 @@
       uri: timer:snow-contacts
       parameters:
         period: "300000"
+        includeMetadata: "true"
         delay: "45000"
       steps:
-        - to:
-            uri: kamelet:servicenow-query
-            parameters:
-              table: customer_contact
-              fields: sys_id,first_name,last_name,title,email,phone,mobile_phone,account,active
+        - choice:
+            description: "Erster Lauf nach dem Start: Vollabgleich der letzten 50; danach nur in den letzten 15 Min. geaenderte Datensaetze (Takt 5 Min.)"
+            when:
+              - simple: "${header.CamelTimerCounter} == 1"
+                steps:
+                  - to:
+                      uri: kamelet:servicenow-query
+                      parameters:
+                        table: customer_contact
+                        fields: sys_id,first_name,last_name,title,email,phone,mobile_phone,account,active
+            otherwise:
+              steps:
+                - to:
+                    uri: kamelet:servicenow-query
+                    parameters:
+                      table: customer_contact
+                      fields: sys_id,first_name,last_name,title,email,phone,mobile_phone,account,active
+                      query: "sys_updated_onRELATIVEGE@minute@ago@15^ORDERBYDESCsys_updated_on"
         - split:
             jq:
               expression: .result

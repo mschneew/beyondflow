@@ -4,6 +4,13 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.20 – 25.11.2026 – ServiceNow: nur Änderungen, Wiederholung bei 5xx
+- `snow-accounts-to-crm` und `snow-contacts-to-crm` holen nur Datensätze, die in den letzten 15 Minuten geändert wurden.
+  - Abfrage: `sys_updated_onRELATIVEGE@minute@ago@15`, ohne Klammern, damit `RAW()` nicht bricht.
+  - Der erste Lauf nach jedem Start gleicht weiterhin die letzten 50 Datensätze vollständig ab. Dafür hat der Timer `includeMetadata=true`, sonst gibt es keinen Laufzähler.
+  - Bisher wurden bei jedem Lauf alle 50 neu ins CRM geschrieben.
+- Konnektor `servicenow-query`: Bei HTTP 5xx wird nach 3 Sekunden einmal wiederholt. Hintergrund: sporadische 500er der Entwickler-Instanz im Test.
+
 ## 0.19 – 25.11.2026 – Prüfabfragen ins CRM
 - Paket `CX_BF_CHECK` (`db/70_cx_bf_check.sql`): feste, nur lesende Abfragen als JSON.
   - Typen: `auftrag`, `account`, `kontakt`, `extern`.
