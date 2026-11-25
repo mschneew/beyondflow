@@ -28,7 +28,7 @@ Arbeitsplatz ──SSH-Tunnel──► BeyondFlow-VM (OCI, ARM)
 | `systemd/` | Benutzer-Units der vier Dienste |
 | `runtime/flows/` | Flows und Konnektoren der Hauptlaufzeit |
 | `runtime/events/` | Flows der Ereignis-Laufzeit (Salesforce CDC) |
-| `runtime/examples/` | Beispiel-Flows (werden deaktiviert installiert) |
+| `runtime/reference/` | Referenz-Flows (frühere Wege, Beispiele) – immer deaktiviert installiert |
 | `api/`, `studio/`, `nginx/`, `kaoto/` | Studio-Backend, Oberfläche, Webserver-Konfiguration, Kaoto-Paletten-Patch |
 | `sap-gateway/` | SAP-Gateway (Quelle und Installer) |
 | `db/` | SQL-Skripte für das CRM-Schema, in Nummernreihenfolge |
