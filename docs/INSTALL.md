@@ -66,11 +66,18 @@ In der OCI-Konsole: Autonomous Database → **Database Actions → SQL**, angeme
 
 | Skript | Inhalt |
 |---|---|
-| `10_beyondflow_user.sql` | Benutzer `BEYONDFLOW` (Profil ohne Passwortablauf) und Rechte – *wird nachgeliefert* |
-| `20_cx_bf_api.sql` | Paket `CX_BF_API` (Upsert ServiceNow → CRM) – *wird nachgeliefert* |
-| `30_cx_sap_s4.sql` | Paket `CX_SAP_S4`, Sichten `CX_BF_ORDER_V`, `CX_SAP_ORDER_HDR_V`, `CX_SAP_ORDER_ITM_V` – *wird nachgeliefert* |
+| `10_beyondflow_user.sql` | Profil `SERVICE_ACCOUNT` (Passwort läuft nicht ab) und Benutzer `BEYONDFLOW`. Database Actions fragt das Passwort als Ersetzungsvariable ab. |
+| `20_cx_bf_api.sql` | Paket `CX_BF_API` (Upsert ServiceNow → CRM) |
+| `30_cx_sap_s4.sql` | Paket `CX_SAP_S4`, Sichten `CX_BF_ORDER_V`, `CX_SAP_ORDER_HDR_V`, `CX_SAP_ORDER_ITM_V`. Zeigt am Ende die SAP-Werte (Liste `SAP_S4_CONFIG`). |
 | `40_cx_bf_sap.sql` | Paket `CX_BF_SAP` (Auftrag → SAP, Status zurück) |
 | `50_cx_bf_sfdc.sql` | Paket `CX_BF_SFDC`, Tabelle `CX_BF_SYNC_STATE` (Salesforce) |
+| `60_grants.sql` | Rechte von `BEYONDFLOW` zusammengefasst, mit Kontrolle (5 Zeilen) |
+
+Ohne SAP oder Salesforce lassen sich die Skripte 30/40 bzw. 50 weglassen. Dann schlagen in `60_grants.sql` die zugehörigen Zeilen fehl; das ist unkritisch.
+
+**SAP-Stammdaten im CRM:**
+- Die Werteliste `SAP_S4_CONFIG` braucht die Einträge `VKORG`, `VTWEG`, `SPART` und `AUART` mit den Werten des Kunden.
+- Kunden und Produkte brauchen einen Eintrag in `S_EXT_REF` mit `EXT_SYS_CD = 'SAP_S4'`. Als `EXT_ID` steht dort die SAP-Kundennummer bzw. die Materialnummer.
 
 Prüfen: Alle Objekte müssen `VALID` sein.
 ```sql

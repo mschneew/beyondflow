@@ -12,7 +12,12 @@ OLD=$(git rev-parse HEAD); NEW=$(git rev-parse origin/main)
 {
   echo "================ $(date '+%F %T') Update ${OLD:0:7} -> ${NEW:0:7}"
   git log --oneline "$OLD..$NEW"
+  CHANGED=$(git diff --name-only "$OLD" "$NEW")
   if git merge -q --ff-only origin/main; then
+    if ! echo "$CHANGED" | grep -qvE '^(docs/|db/)|\.md$'; then
+      echo "Nur Dokumentation/DB-Skripte geaendert – kein Installer-Lauf, keine Unterbrechung"
+      exit 0
+    fi
     # Der neue Installer kann sich selbst geaendert haben – deshalb erst nach dem Merge starten
     bash install/install.sh </dev/null && echo "Update OK: $(cat VERSION)" || echo "Update FEHLER (Details oben)"
   else

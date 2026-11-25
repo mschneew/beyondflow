@@ -4,6 +4,15 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.17 – 25.11.2026 – Datenbank-Skripte vollständig
+- Aus der Referenz-DB exportiert:
+  - `db/10_beyondflow_user.sql` (Profil, Benutzer)
+  - `20_cx_bf_api.sql`
+  - `30_cx_sap_s4.sql` (Paket und drei Sichten)
+  - `60_grants.sql`
+- Alle Pakete und Sichten in `db/` sind per Prüfsumme mit der Referenz-DB abgeglichen.
+- Das automatische Update überspringt den Installer, wenn sich nur `docs/`, `db/` oder `*.md` geändert haben. So entsteht keine Unterbrechung der Laufzeiten.
+
 ## 0.16 – 25.11.2026 – Automatisches Update
 - Timer `beyondflow-update.timer` prüft alle 10 Minuten GitHub (Branch `main`).
 - Bei neuen Commits: `git merge --ff-only`, dann `install/install.sh`. Protokoll in `logs/update.log`.
