@@ -17,6 +17,9 @@
               - setHeader:
                   name: X-BF-Token
                   constant: "{{env:BF_SAP_TOKEN}}"
+              - setHeader:
+                  name: CamelHttpMethod
+                  constant: GET
               - to:
                   uri: "{{bf.sap.gateway}}/health"
                   parameters:

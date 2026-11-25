@@ -4,6 +4,10 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.25 – 25.11.2026 – Korrektur SAP-Statusabgleich
+- `sap-status-to-crm`: Die Vorprüfung `/health` (seit 0.21) schickte versehentlich POST statt GET. Das Gateway antwortete mit 404, der Statusabgleich wurde deshalb jedes Mal übersprungen („SAP-Gateway nicht verfuegbar (HTTP 404)“). Gefunden im Ende-zu-Ende-Test von 0.24.
+- Ende-zu-Ende-Test 0.24: Opportunity „Test Kafka E2E 25.11.“ (GM-75, 3 Stück) → CRM-Auftrag AU-2026-0411 → Kafka `crm.order` → SAP 0001036805 → Kafka `sap.order.status` → ERP-Status „Angelegt“ im CRM → Salesforce aktualisiert (12 Sekunden vom CRM-Auftrag bis zur Rückmeldung).
+
 ## 0.24 – 25.11.2026 – Salesforce, CRM-Aufträge und SAP-Status über Kafka, Wiedereinspielen
 Alle Ereignisströme laufen jetzt über Kafka. Jeder Strom hat ein eigenes Fehler-Topic (`*.dlq`).
 
