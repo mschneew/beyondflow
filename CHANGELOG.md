@@ -4,6 +4,14 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.18 – 25.11.2026 – Ereignis-Flow korrigiert, Flow-Updates
+- `event-sf-opportunity`: Der Filter liest die Phase direkt aus dem Ereignis-Body.
+  - Camel liefert den `ChangeEventHeader` nicht im Body. Deshalb brach jedes CDC-Ereignis mit `RuntimeBeanExpressionException` ab.
+  - Gefunden im ersten echten Test: Opportunity „Test E2E Ereignis 25.11.“.
+- Installer: Flows, die seit dem letzten Einspielen lokal unverändert sind, werden auf den neuen Repo-Stand aktualisiert.
+  - Bisher wurden alle abweichenden Flows behalten. Im Studio geänderte Flows bleiben weiterhin erhalten.
+  - Der zuletzt eingespielte Stand liegt in `~/beyondflow/.installed/`.
+
 ## 0.17 – 25.11.2026 – Datenbank-Skripte vollständig
 - Aus der Referenz-DB exportiert:
   - `db/10_beyondflow_user.sql` (Profil, Benutzer)

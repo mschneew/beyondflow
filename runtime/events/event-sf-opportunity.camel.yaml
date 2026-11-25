@@ -7,11 +7,11 @@
         defaultReplayId: "-1"
       steps:
         - filter:
-            description: "Nur neue Opportunities oder geaenderte Phase"
-            simple: "${body[ChangeEventHeader][changeType]} == 'CREATE' || ${body[ChangeEventHeader][changedFields]} contains 'StageName'"
+            description: "Nur neue Opportunities oder geaenderte Phase (CDC liefert bei UPDATE nur die geaenderten Felder im Body)"
+            simple: "${body} is 'java.util.Map' && ${body.containsKey('StageName')} == true"
             steps:
               - log:
-                  message: "Salesforce-Ereignis: Opportunity ${body[ChangeEventHeader][recordIds]} (${body[ChangeEventHeader][changeType]}, Phase ${body[StageName]}) -> Abgleich"
+                  message: "Salesforce-Ereignis: Opportunity-Phase ${body[StageName]} -> Abgleich"
               - removeHeaders:
                   pattern: "*"
               - setBody:

@@ -71,7 +71,7 @@ camel --version | tail -1
 
 # ---------------------------------------------------------------- 3. Programmdateien
 step "3/9 Programmdateien"
-mkdir -p $B/{flows,disabled,events,logs,config,api,studio,nginx,kaoto,wallet} $U
+mkdir -p $B/{flows,disabled,events,logs,config,api,studio,nginx,kaoto,wallet,.installed} $U
 cp "$SRC/api/BeyondFlowApi.java" $B/api/
 cp -r "$SRC/studio/." $B/studio/
 cp "$SRC/nginx/default.conf" $B/nginx/
@@ -95,13 +95,19 @@ install_flow() { # install_flow QUELLE ZIELORDNER
   local cur=""
   [ -f "$dir/$id.camel.yaml" ] && cur="$dir/$id.camel.yaml"
   [ -z "$cur" ] && [ -f "$B/disabled/$id.camel.yaml" ] && cur="$B/disabled/$id.camel.yaml"
+  local base="$B/.installed/$id.camel.yaml"   # Stand, den der Installer zuletzt eingespielt hat
   if [ -z "$cur" ]; then
     if configured "$sys"; then cp "$f" "$dir/"; echo "  neu:          $id"
     else cp "$f" "$B/disabled/"; echo "  deaktiviert:  $id (System $sys nicht konfiguriert)"; fi
   elif ! cmp -s "$f" "$cur"; then
     if [ $REPLACE_FLOWS = 1 ]; then cp "$f" "$cur"; echo "  ersetzt:      $id"
-    else echo "  abweichend:   $id (lokal geaendert – behalten; --replace-flows zum Ueberschreiben)"; fi
+    elif [ -f "$base" ] && cmp -s "$base" "$cur"; then
+      cp "$f" "$cur"; echo "  aktualisiert: $id"          # lokal unveraendert -> neuen Repo-Stand uebernehmen
+    else echo "  abweichend:   $id (im Studio geaendert – behalten; --replace-flows zum Ueberschreiben)"; fi
   fi
+  # Grundlage fuer das naechste Update merken, aber nur wenn der installierte Stand dem Repo entspricht
+  if [ -n "$cur" ] && cmp -s "$f" "$cur"; then cp "$f" "$base"; fi
+  if [ -z "$cur" ]; then cp "$f" "$base"; fi
 }
 for f in "$SRC"/runtime/flows/*.camel.yaml; do install_flow "$f" $B/flows; done
 for f in "$SRC"/runtime/events/*.camel.yaml; do install_flow "$f" $B/events; done
