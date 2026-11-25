@@ -8,6 +8,8 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 - Erster echter Test: ServiceNow lehnt das Let's-Encrypt-Zertifikat für die reine IP ab (`IllegalArgumentException: badly formatted directory string`). IP-Zertifikate gibt es nur im Profil „shortlived“, und das hat kein Subject (CN).
 - Das Zertifikat lautet jetzt auf `BF_PUBLIC_NAME` oder, ohne eigenen DNS-Namen, auf `<ip-mit-bindestrichen>.sslip.io` (Standardprofil, 90 Tage, automatische Erneuerung). Das alte IP-Zertifikat wird nicht mehr erneuert.
 - ServiceNow-Eigenschaft `beyondflow.events.url` entsprechend auf den Namen umgestellt.
+- Test bestanden: Änderung an Account „BF Test Account 25.11.“ und Kontakt „Tina Testkontakt“ in ServiceNow war nach unter 1 Sekunde im CRM (Weg: Business Rule → HTTPS → Kafka `snow.events` → CRM).
+- Reiter „Ereignisse“: mehrzeilige Ereignisse (Abgleich) werden in „Letzte Ereignisse“ vollständig angezeigt.
 
 ## 0.22 – 25.11.2026 – Kafka als Ereignis-Rückgrat, ServiceNow ereignisbasiert
 - **Apache Kafka 4.1.2** (KRaft, ein Knoten, ohne ZooKeeper) als Dienst `beyondflow-kafka` (Podman, nur `127.0.0.1:9092`, Daten im Volume `bf-kafka-data`, 7 Tage Aufbewahrung, 512 MB Heap). Abschaltbar mit `BF_KAFKA=no`.

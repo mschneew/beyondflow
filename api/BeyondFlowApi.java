@@ -498,7 +498,12 @@ public class BeyondFlowApi {
             String out = kx(40, K + "kafka-console-consumer.sh" + BS + " --topic " + topic + " --partition 0 --offset " + from
                 + " --max-messages 10 --timeout-ms 6000 --property print.timestamp=true --property print.key=true --property print.offset=true 2>/dev/null");
             List<String> items = new ArrayList<>();
+            // mehrzeilige Werte (formatiertes JSON) wieder zu einer Zeile je Ereignis zusammenfuegen
+            List<String> recs = new ArrayList<>();
             for (String l : out.split("\n")) {
+                if (l.startsWith("CreateTime:") || recs.isEmpty()) recs.add(l); else recs.set(recs.size() - 1, recs.get(recs.size() - 1) + " " + l.trim());
+            }
+            for (String l : recs) {
                 // CreateTime:1764...  Offset:12  Schluessel  Wert  (durch Tabulatoren getrennt)
                 String[] f = l.split("\t", 4);
                 if (f.length < 4 || !f[0].startsWith("CreateTime:")) continue;
