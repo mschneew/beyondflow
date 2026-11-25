@@ -14,7 +14,7 @@ OLD=$(git rev-parse HEAD); NEW=$(git rev-parse origin/main)
   git log --oneline "$OLD..$NEW"
   CHANGED=$(git diff --name-only "$OLD" "$NEW")
   if git merge -q --ff-only origin/main; then
-    if ! echo "$CHANGED" | grep -qvE '^(docs/|db/)|\.md$'; then
+    if [ -z "$(echo "$CHANGED" | grep -vE '^(docs/|db/)|\.md$')" ]; then
       echo "Nur Dokumentation/DB-Skripte geaendert – kein Installer-Lauf, keine Unterbrechung"
       exit 0
     fi
