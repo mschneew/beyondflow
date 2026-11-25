@@ -199,7 +199,7 @@ chk() { if eval "$2" >/dev/null 2>&1; then echo "  OK    $1"; else echo "  FEHLE
 chk "Studio (127.0.0.1:8080)"     "curl -sf http://127.0.0.1:8080/studio.html"
 chk "API (127.0.0.1:8090)"        "curl -sf http://127.0.0.1:8090/api/version"
 chk "Laufzeit aktiv"              "systemctl --user is-active beyondflow-runtime"
-chk "Ereignis-Eingang 8091"       "ss -ltn | grep -q 127.0.0.1:8091"
+chk "Ereignis-Eingang 8091"       "ss -ltn | grep -qE '127\.0\.0\.1\]?:8091'"
 [ $EVENTS = 1 ] && chk "Ereignis-Laufzeit aktiv" "systemctl --user is-active beyondflow-events"
 grep -E "Routes startup|Error starting" $B/logs/runtime.log 2>/dev/null | tail -2 || true
 echo
