@@ -31,16 +31,4 @@
                       steps:
                         - log:
                             loggingLevel: WARN
-                            message: "Kafka nicht erreichbar (${exception.message}) - Abgleich direkt anstossen"
-                        - removeHeaders:
-                            pattern: "*"
-                        - setBody:
-                            constant: ""
-                        - setHeader:
-                            name: CamelHttpMethod
-                            constant: POST
-                        - to:
-                            uri: "http://127.0.0.1:8091/trigger/sf-opp-sync"
-                            parameters:
-                              throwExceptionOnFailure: "false"
-                              connectionRequestTimeout: "5000"
+                            message: "Kafka nicht erreichbar (${exception.message}) - der Timer sf-opportunities-to-crm holt die Opportunity spaetestens in 15 Min."

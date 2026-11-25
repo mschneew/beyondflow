@@ -111,8 +111,11 @@ install_flow() { # install_flow QUELLE ZIELORDNER
 }
 for f in "$SRC"/runtime/flows/*.camel.yaml; do install_flow "$f" $B/flows; done
 for f in "$SRC"/runtime/events/*.camel.yaml; do install_flow "$f" $B/events; done
-for f in "$SRC"/runtime/examples/*.camel.yaml; do
-  [ -f "$B/flows/$(basename "$f")" ] || [ -f "$B/disabled/$(basename "$f")" ] || cp "$f" $B/disabled/
+# Referenz-Flows (fruehere Wege, Beispiele): immer deaktiviert, nur zum Nachlesen im Studio
+for f in "$SRC"/runtime/reference/*.camel.yaml; do
+  n=$(basename "$f")
+  if [ -f "$B/flows/$n" ]; then mv "$B/flows/$n" "$B/disabled/$n"; echo "  deaktiviert (Referenz): ${n%.camel.yaml}"
+  elif [ ! -f "$B/disabled/$n" ]; then cp "$f" "$B/disabled/"; fi
 done
 echo "aktiv: $(ls $B/flows | wc -l), Ereignisse: $(ls $B/events | wc -l), deaktiviert: $(ls $B/disabled | wc -l)"
 

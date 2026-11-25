@@ -1,6 +1,6 @@
 - route:
     id: inbox-triggers
-    description: "Ereignis-Eingang (nur 127.0.0.1:8091): stoesst einen Abgleich sofort an, z. B. aus der Ereignis-Laufzeit"
+    description: "REFERENZ (deaktiviert seit 0.26): frueherer HTTP-Anstoss aus der Ereignis-Laufzeit, ersetzt durch Kafka sf.opportunity"
     from:
       uri: "platform-http:/trigger/sf-opp-sync"
       parameters:

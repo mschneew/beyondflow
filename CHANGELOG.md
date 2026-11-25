@@ -4,6 +4,13 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.26 – 25.11.2026 – Alte Flows nur noch als Referenz
+- Neuer Ordner `runtime/reference/`: frühere Wege und Beispiele, die der Installer **immer deaktiviert** einspielt (im Studio sichtbar, nicht aktiv, nicht gelöscht):
+  - `inbox-triggers` – HTTP-Anstoß aus der Ereignis-Laufzeit, ersetzt durch Kafka `sf.opportunity`
+  - `hello-beyondflow`, `crm-auftragsmonitor` – Beispiele aus der Anfangszeit (bisher `runtime/examples/`)
+- `event-sf-opportunity`: Ist Kafka nicht erreichbar, verlässt sich die Ereignis-Laufzeit auf den 15-Minuten-Timer (statt des HTTP-Anstoßes).
+- Sicherheits-Timer bleiben aktiv: `sf-opportunities-to-crm` (15 Min.), `crm-orders-to-sf` (10 Min.), ServiceNow-Abgleich (stündlich).
+
 ## 0.25 – 25.11.2026 – Korrektur SAP-Statusabgleich
 - `sap-status-to-crm`: Die Vorprüfung `/health` (seit 0.21) schickte versehentlich POST statt GET. Das Gateway antwortete mit 404, der Statusabgleich wurde deshalb jedes Mal übersprungen („SAP-Gateway nicht verfuegbar (HTTP 404)“). Gefunden im Ende-zu-Ende-Test von 0.24.
 - Ende-zu-Ende-Test 0.24: Opportunity „Test Kafka E2E 25.11.“ (GM-75, 3 Stück) → CRM-Auftrag AU-2026-0411 → Kafka `crm.order` → SAP 0001036805 → Kafka `sap.order.status` → ERP-Status „Angelegt“ im CRM → Salesforce aktualisiert (12 Sekunden vom CRM-Auftrag bis zur Rückmeldung). Dieser Lauf kam über den 15-Minuten-Timer, weil die Laufzeiten genau beim Speichern neu starteten und das CDC-Ereignis verpasst wurde.
