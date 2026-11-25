@@ -9,6 +9,7 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
   - Abfrage: `sys_updated_onRELATIVEGE@minute@ago@15`, ohne Klammern, damit `RAW()` nicht bricht.
   - Der erste Lauf nach jedem Start gleicht weiterhin die letzten 50 Datensätze vollständig ab. Dafür hat der Timer `includeMetadata=true`, sonst gibt es keinen Laufzähler.
   - Bisher wurden bei jedem Lauf alle 50 neu ins CRM geschrieben.
+- Automatisches Update: Es merkt sich den zuletzt erfolgreich installierten Stand in `.installed/commit`. Schlägt eine Installation fehl, wird sie beim nächsten Timer-Lauf wiederholt. Bisher blieb sie unbemerkt liegen.
 - Konnektor `servicenow-query`: Bei HTTP 5xx wird nach 3 Sekunden einmal wiederholt. Hintergrund: sporadische 500er der Entwickler-Instanz im Test.
 
 ## 0.19 – 25.11.2026 – Prüfabfragen ins CRM
