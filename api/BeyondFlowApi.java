@@ -64,11 +64,12 @@ public class BeyondFlowApi {
             send(ex, 200, "text/plain", Files.exists(v) ? new String(Files.readAllBytes(v), StandardCharsets.UTF_8).trim() : "unbekannt");
         });
         for (String c : new String[]{ "/api/insights", "/api/check", "/api/pause", "/api/resume" }) s.createContext(c, Ops::handle);
+        s.createContext("/api/sapgw/", SapGw::handle);
         // Pruefabfragen ins CRM (nur lesend): /api/crm/check/{typ}/{key} -> Flow crm-check auf 127.0.0.1:8091
         s.createContext("/api/crm/check/", ex -> {
             if (!ex.getRequestMethod().equals("GET")) { send(ex, 405, "text/plain", "Methode nicht erlaubt"); return; }
             String rest = ex.getRequestURI().getRawPath().substring("/api/crm/check/".length());
-            if (!rest.matches("(auftrag|account|kontakt|extern)/[A-Za-z0-9:._-]{1,100}")) {
+            if (!rest.matches("(auftrag|account|kontakt|extern|sapqueue)/[A-Za-z0-9:._-]{1,100}")) {
                 send(ex, 400, "application/json", "{\"found\":false,\"fehler\":\"Erlaubt: /api/crm/check/auftrag|account|kontakt|extern/<Schluessel>\"}");
                 return;
             }
@@ -214,6 +215,111 @@ public class BeyondFlowApi {
     // =====================================================================
     // Betriebsassistent: Log-Analyse, Verbindungspruefung, Pausieren, KI
     // =====================================================================
+
+    // ---------- SAP-Gateway (Reiter "SAP-Gateway" im Studio) ----------
+    // Status und Anhalten/Fortsetzen ueber die Admin-Schnittstelle des Gateways (Token bleibt auf der VM),
+    // Start/Stopp des Dienstes ueber einen eingeschraenkten SSH-Zugang (erzwungener Befehl auf der SAP-VM).
+    static class SapGw {
+        static final Path KEY = HOME.resolve(".ssh/bf_sapctl");
+        static final Path AUDIT = BASE.resolve("logs/sapgw-actions.log");
+
+        static void handle(HttpExchange ex) throws IOException {
+            String path = ex.getRequestURI().getPath().replaceAll("/+$", "");
+            String m = ex.getRequestMethod();
+            try {
+                if (path.equals("/api/sapgw/status") && m.equals("GET")) { send(ex, 200, "application/json; charset=utf-8", status()); return; }
+                if (!m.equals("POST")) { send(ex, 405, "text/plain", "Methode nicht erlaubt"); return; }
+                String act = path.substring("/api/sapgw/".length());
+                String r;
+                switch (act) {
+                    case "pause": case "resume": r = admin(act); break;
+                    case "service/start": case "service/stop": case "service/restart": r = service(act.substring(8)); break;
+                    default: send(ex, 404, "text/plain", "Unbekannt"); return;
+                }
+                audit(act, r);
+                send(ex, 200, "application/json; charset=utf-8", r);
+            } catch (Exception e) {
+                send(ex, 500, "application/json", Ops.res(false, "Fehler: " + e, 0));
+            }
+        }
+
+        static String gw() { return Ops.props().getOrDefault("bf.sap.gateway", "").replaceAll("/+$", ""); }
+        static String host() { return gw().replaceAll("^https?://", "").replaceAll("[:/].*$", ""); }
+        static String user() { return Ops.props().getOrDefault("bf.sap.ctl.user", "bfctl"); }
+
+        static String[] gwCall(String method, String p) {
+            java.net.http.HttpRequest.Builder b = java.net.http.HttpRequest.newBuilder(java.net.URI.create(gw() + p))
+                .header("X-BF-Token", Ops.secrets().getOrDefault("BF_SAP_TOKEN", ""));
+            b = method.equals("POST") ? b.POST(java.net.http.HttpRequest.BodyPublishers.noBody()) : b.GET();
+            return Ops.http(b);
+        }
+
+        static String admin(String act) {
+            long t0 = System.currentTimeMillis();
+            String[] r = gwCall("POST", "/admin/" + act);
+            if (r[0].equals("0")) return Ops.res(false, "SAP-Gateway nicht erreichbar – ist der Dienst gestartet?", System.currentTimeMillis() - t0);
+            if (r[0].equals("404")) return Ops.res(false, "Das SAP-Gateway kennt diese Funktion noch nicht – Gateway-Update einspielen (sap-gateway/install-sap-gateway.sh)", 0);
+            return r[1];
+        }
+
+        static String ssh(String cmd) {
+            if (!Files.exists(KEY)) return "nicht-eingerichtet";
+            String out = run(HOME.toFile(), 40, "ssh", "-i", KEY.toString(), "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+                "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
+                user() + "@" + host(), cmd).trim();
+            return out;
+        }
+
+        static String service(String act) {
+            long t0 = System.currentTimeMillis();
+            if (!Files.exists(KEY)) return Ops.res(false, "SSH-Zugang zur SAP-VM ist nicht eingerichtet (siehe Anleitung: sap-gateway/install-sap-gateway.sh)", 0);
+            String out = ssh(act);
+            String st = ssh("status");
+            boolean ok = act.equals("stop") ? !st.endsWith("active") || st.endsWith("inactive") : st.endsWith("active") && !st.endsWith("inactive");
+            String word = act.equals("stop") ? "gestoppt" : act.equals("start") ? "gestartet" : "neu gestartet";
+            return Ops.res(ok, ok ? "SAP-Gateway " + word + " (Dienst: " + lastLine(st) + ")" : "Aktion " + act + " fehlgeschlagen: " + Ops.clip(out + " / " + st, 300), System.currentTimeMillis() - t0);
+        }
+
+        static String lastLine(String s) { String[] l = s.trim().split("\\n"); return l[l.length - 1].trim(); }
+
+        static void audit(String act, String result) {
+            try {
+                String line = java.time.LocalDateTime.now().withNano(0) + "  " + act + "  " + Ops.clip(result, 300) + "\n";
+                Files.write(AUDIT, line.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (IOException ignore) {}
+        }
+
+        static String status() {
+            StringBuilder b = new StringBuilder("{");
+            // 1) Gateway (Prozess + SAP)
+            long t0 = System.currentTimeMillis();
+            String[] g = gwCall("GET", "/admin/status");
+            long gms = System.currentTimeMillis() - t0;
+            if (g[0].equals("200")) b.append("\"gateway\":{\"erreichbar\":true,\"ms\":").append(gms).append(",\"daten\":").append(g[1]).append("}");
+            else if (g[0].equals("404")) b.append("\"gateway\":{\"erreichbar\":true,\"veraltet\":true,\"meldung\":\"Gateway-Version ohne Admin-Schnittstelle\"}");
+            else b.append("\"gateway\":{\"erreichbar\":false,\"meldung\":").append(Ops.js(g[0].equals("0") ? (g[1].contains("ConnectException") ? "Verbindung abgelehnt – Dienst gestoppt?" : g[1].contains("Timeout") ? "Zeitüberschreitung – VM oder Netz prüfen" : Ops.clip(g[1], 200)) : "HTTP " + g[0])).append("}");
+            // 2) Dienst auf der SAP-VM (SSH)
+            String st = ssh("status");
+            b.append(",\"dienst\":{\"eingerichtet\":").append(!st.equals("nicht-eingerichtet"))
+             .append(",\"zustand\":").append(Ops.js(st.equals("nicht-eingerichtet") ? "" : lastLine(st))).append("}");
+            // 3) Ausgangsqueue im CRM
+            String[] q = Ops.http(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:8091/check/sapqueue/alle")).GET());
+            b.append(",\"queue\":").append(q[0].equals("200") ? q[1] : "{\"found\":false,\"fehler\":" + Ops.js("HTTP " + q[0]) + "}");
+            // 4) Flows
+            b.append(",\"flows\":[");
+            String[] fl = { "crm-orders-to-sap", "sap-status-to-crm", "connector-sap" };
+            for (int i = 0; i < fl.length; i++) b.append(i > 0 ? "," : "").append("{\"id\":\"").append(fl[i]).append("\",\"aktiv\":").append(Files.exists(FLOWS.resolve(fl[i] + ACTIVE))).append("}");
+            b.append("]");
+            // 5) letzte Aktionen
+            List<String> acts = new ArrayList<>();
+            try { List<String> all = Files.readAllLines(AUDIT, StandardCharsets.UTF_8); acts = all.subList(Math.max(0, all.size() - 8), all.size()); } catch (IOException ignore) {}
+            b.append(",\"aktionen\":[");
+            for (int i = acts.size() - 1, n = 0; i >= 0; i--, n++) b.append(n > 0 ? "," : "").append(Ops.js(acts.get(i)));
+            b.append("],\"zeit\":").append(Ops.js(java.time.LocalTime.now().withNano(0).toString())).append("}");
+            return b.toString();
+        }
+    }
+
     static class Ops {
         static final java.time.format.DateTimeFormatter TS = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         static final Pattern LINE = Pattern.compile("^(\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)\\.\\d+\\s+(INFO|WARN|ERROR|DEBUG|TRACE)\\s+\\d+ --- \\[[^\\]]*\\]\\s+(\\S+)\\s*:\\s?(.*)$");
@@ -297,7 +403,7 @@ public class BeyondFlowApi {
                 // --- fachliche Datenprobleme (keine Stoerung)
                 String dkey = null, dmsg = null;
                 if (has(m, "hat keine SAP-(Material|Kunden)nummer|SAP-Konfiguration unvollst|SAP-Fehler \\(technisch: N\\)")) { dkey = "sap"; dmsg = m; }
-                else if (has(m, "^Opportunity .*\\{.*\"ok\"\\s*:\\s*false")) { dkey = "salesforce"; dmsg = m; }
+                else if (has(m, "^Opportunity .*\\{.*\"ok\"\\s*:\\s*false|^Opportunity .*kein CRM-Auftrag")) { dkey = "salesforce"; dmsg = m; }
                 else if (has(t, "ORA-00001")) { dkey = "crm"; dmsg = "Dublette im CRM: " + clip(t.replaceAll("(?s).*?(ORA-00001[^\\n]*).*", "$1"), 160); }
                 if (dkey != null) {
                     Finding d = dataByKey.computeIfAbsent(dkey, k -> { Finding n = new Finding(); n.system = "data-" + k; n.status = "warn"; return n; });
@@ -320,11 +426,12 @@ public class BeyondFlowApi {
                 } else if (has(m, "Salesforce-Account|Salesforce-Kontakt|-> Salesforce (angelegt|aktualisiert)|Salesforce-Opportunity aktualisiert|-> CRM-Auftrag|Salesforce-Ereignis")) mark(f.get("salesforce"), e, true);
 
                 // --- SAP
-                if (has(t, "SAP-Gateway: |SAP-Fehler \\(technisch: Y\\)") || (bad && t.contains(gwHost) && !has(t, "TimerConsumer"))) mark(f.get("sap"), e, false);
+                if (has(t, "SAP-Gateway: |SAP-Fehler \\(technisch: Y\\)|SAP-Statusabgleich uebersprungen") || (bad && t.contains(gwHost) && !has(t, "TimerConsumer"))) mark(f.get("sap"), e, false);
                 else if (has(m, "-> SAP \\d+|bereits SAP \\d+|ERP-Status .* -> ")) mark(f.get("sap"), e, true);
 
                 // --- ServiceNow
-                if (has(m, "^ServiceNow \\w+: HTTP \\d+") || (bad && has(t, "service-now\\.com") && !has(t, "TimerConsumer"))) mark(f.get("servicenow"), e, false);
+                if (has(m, "neuer Versuch in 3 s")) { /* Wiederholung, kein Befund */ }
+                else if (has(m, "^ServiceNow \\w+: HTTP \\d+") || (bad && has(t, "service-now\\.com") && !has(t, "TimerConsumer"))) mark(f.get("servicenow"), e, false);
                 else if (e.logger.startsWith("snow-") && has(m, "-> CRM ")) mark(f.get("servicenow"), e, true);
 
                 // --- CRM-Datenbank

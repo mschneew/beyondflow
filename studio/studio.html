@@ -58,6 +58,12 @@
   nav.views button .badge { display:none; margin-left:6px; min-width:18px; padding:0 5px; border-radius:9px; background:var(--red); color:#fff; font-size:11px; line-height:18px; }
   nav.views button .badge.show { display:inline-block; } nav.views button .badge.warn { background:var(--gold); color:#1E1B19; }
   .ai { padding:20px 26px; max-width:1200px; }
+  .sgbar { display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:14px; margin-top:16px; }
+  .sgbar > div { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .sgbar b { display:block; margin-bottom:4px; } .sgbar span { display:block; color:var(--muted); font-size:13px; margin-bottom:10px; }
+  .sgbar .btn { min-height:32px; padding:6px 12px; font-size:13px; margin-right:8px; }
+  .card table.kv { border-collapse:collapse; font-size:13px; width:100%; } .card table.kv td { padding:2px 0; vertical-align:top; } .card table.kv td:first-child { color:var(--muted); width:46%; }
+  #sgMsg { display:block; margin-top:12px; font-size:13px; }
   .ai .top { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:16px; }
   .ai .top h2 { font-size:18px; margin:0 12px 0 0; } .ai .top .meta { color:var(--muted); font-size:12px; }
   .ai .top .btn { min-height:32px; padding:6px 12px; font-size:13px; }
@@ -144,6 +150,7 @@
     <button id="vMap">Mapping</button>
     <button id="vStatus">Laufzeit</button>
     <button id="vLogs">Log</button>
+    <button id="vSap">SAP-Gateway<span class="badge" id="sapBadge"></span></button>
     <button id="vAi">Assistent<span class="badge" id="aiBadge"></span></button>
   </nav>
 </header>
@@ -176,6 +183,21 @@
         </div>
         <div id="aiText"></div>
         <div class="cards" id="aiCards"><p style="color:var(--muted)">lädt …</p></div>
+      </div></div>
+      <div id="sap" class="panel"><div class="ai">
+        <div class="top">
+          <h2>SAP-Gateway</h2>
+          <button class="btn ghost" id="sgRefresh">Aktualisieren</button>
+          <span class="meta" id="sgMeta"></span>
+        </div>
+        <div class="cards" id="sgCards"><p style="color:var(--muted)">lädt …</p></div>
+        <div class="sgbar">
+          <div><b>Verarbeitung</b><span>Das Gateway läuft weiter, nimmt aber keine Aufträge an (BeyondFlow wiederholt sie später).</span>
+            <button class="btn ghost" id="sgPause">Anhalten</button><button class="btn ghost" id="sgResume">Fortsetzen</button></div>
+          <div><b>Dienst auf der SAP-VM</b><span>Startet oder stoppt den Gateway-Prozess über den eingeschränkten SSH-Zugang.</span>
+            <button class="btn ghost" id="sgStop">Stoppen</button><button class="btn ghost" id="sgStart">Starten</button><button class="btn ghost" id="sgRestart">Neu starten</button></div>
+        </div>
+        <span id="sgMsg"></span>
       </div></div>
       <div id="lic" class="panel"><div class="lic">
         <h2>Drittsoftware &amp; Lizenzen</h2>
@@ -397,7 +419,7 @@ $('flt').oninput = renderOut;
 $('fltProb').onchange = renderOut;
 $('fltCur').onclick = () => { $('flt').value = $('flowId').value.trim(); renderOut(); };
 
-function esc(t) { return String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function esc(t) { return String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 // ---------- Mapping-Editor ----------
 const CRM_COLS = {
@@ -657,19 +679,22 @@ function applyMapping() {
 
 function showTab(t) {
   tab = t;
-  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
+  for (const [id, name] of [['vDesign','design'],['vMap','map'],['vStatus','status'],['vLogs','logs'],['vSap','sap'],['vAi','ai']]) $(id).classList.toggle('act', t === name);
   $('map').classList.toggle('show', t === 'map');
   $('lic').classList.toggle('show', t === 'lic');
   $('ai').classList.toggle('show', t === 'ai');
+  $('sap').classList.toggle('show', t === 'sap');
+  if (t === 'sap') loadSap();
   if (t === 'ai') loadInsights();
   $('outp').classList.toggle('show', t === 'status' || t === 'logs');
   $('fltProbL').style.display = t === 'logs' ? '' : 'none';
   $('resbox').classList.toggle('show', t === 'status');
   if (t === 'map') renderMap();
-  else if (t !== 'design') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
+  else if (t !== 'design' && t !== 'sap' && t !== 'ai' && t !== 'lic') { lastOut = 'lädt …'; renderOut(); refreshOut(); }
 }
 $('vDesign').onclick = () => showTab('design');
 $('vAi').onclick = () => showTab('ai');
+$('vSap').onclick = () => showTab('sap');
 $('licBtn').onclick = () => showTab('lic');
 $('vMap').onclick = () => showTab('map');
 $('vStatus').onclick = () => showTab('status');
@@ -744,6 +769,89 @@ api('/version').then(v => { $('ver').textContent = 'BeyondFlow ' + v; $('ver').t
 refreshList(); refreshOut();
 setInterval(refreshOut, 10000);
 setInterval(refreshList, 30000);
+
+
+// ---------- SAP-Gateway ----------
+const ts = v => v ? String(v).replace('T', ' ').slice(0, 19) : '–';
+const dur = s => s == null ? '–' : s < 3600 ? Math.round(s / 60) + ' Min.' : s < 172800 ? Math.round(s / 3600) + ' Std.' : Math.round(s / 86400) + ' Tage';
+function sgCard(st, title, label, rows, extra) {
+  return `<div class="card ${st}"><div class="hd">${title}<span class="st ${st}">${label}</span></div>
+    <table class="kv">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>${extra || ''}</div>`;
+}
+let sapTimer = null, sapBusy = false;
+async function loadSap() {
+  clearTimeout(sapTimer);
+  if (tab !== 'sap') return;
+  try {
+    const d = JSON.parse(await api('/sapgw/status'));
+    const g = d.gateway || {}, gd = g.daten || {}, q = d.queue || {}, sv = d.dienst || {};
+    const cards = [];
+    // Dienst
+    const z = sv.zustand || '';
+    const dst = !sv.eingerichtet ? 'idle' : z === 'active' ? 'ok' : z === 'activating' ? 'warn' : 'error';
+    cards.push(sgCard(dst, 'Dienst auf der SAP-VM', !sv.eingerichtet ? 'nicht eingerichtet' : z === 'active' ? 'läuft' : z === 'inactive' ? 'gestoppt' : esc(z || 'unbekannt'),
+      sv.eingerichtet ? [['systemd-Dienst', 'sap-gateway: ' + esc(z || '–')]] : [['Hinweis', 'SSH-Zugang noch nicht eingerichtet – Start/Stopp nicht möglich. Siehe Anleitung, Abschnitt SAP-Gateway.']]));
+    // Gateway
+    let gst, glab, grows;
+    if (!g.erreichbar) { gst = 'error'; glab = 'nicht erreichbar'; grows = [['Meldung', esc(g.meldung)]]; }
+    else if (g.veraltet) { gst = 'warn'; glab = 'Update nötig'; grows = [['Meldung', 'Gateway-Version ohne Statusschnittstelle – Gateway-Update einspielen']]; }
+    else {
+      const p = gd.sapPing || {};
+      gst = gd.paused ? 'warn' : !p.ok ? 'error' : 'ok';
+      glab = gd.paused ? 'angehalten' : !p.ok ? 'SAP nicht erreichbar' : 'bereit';
+      grows = [['Verarbeitung', gd.paused ? '<b>angehalten</b>' : 'aktiv'],
+        ['Verbindung zu SAP', p.ok ? 'OK (' + p.ms + ' ms)' : 'Fehler: ' + esc(p.meldung)],
+        ['Laufzeit', dur(gd.laufzeitSek) + ' (seit ' + ts(gd.gestartet) + ')'],
+        ['Anfragen / angelegt', (gd.anfragen ?? 0) + ' / ' + (gd.angelegt ?? 0)],
+        ['Fehler fachlich / technisch', (gd.fachlicheFehler ?? 0) + ' / ' + (gd.technischeFehler ?? 0)],
+        ['Letzter Erfolg', ts(gd.letzterErfolg)],
+        ['Letzter Fehler', gd.letzterFehler ? esc(gd.letzterFehler) : '–']];
+    }
+    cards.push(sgCard(gst, 'Gateway-Prozess', glab, grows));
+    // Queue
+    if (q.found === false) cards.push(sgCard('warn', 'Auftrags-Warteschlange im CRM', 'nicht lesbar', [['Meldung', esc(q.fehler || q.message || 'keine Daten')]]));
+    else {
+      const qs = (q.fehler24h > 0) ? 'error' : (q.neu + q.inArbeit > 0) ? 'warn' : 'ok';
+      const list = (q.letzte || []).map(e => `<li>${esc(e.auftrag || e.key || '')} · ${esc(e.status)}${e.versuche ? ' (' + e.versuche + ' Versuche)' : ''} · ${ts(e.geaendert)}${e.meldung ? ' – ' + esc(e.meldung) : ''}</li>`).join('');
+      cards.push(sgCard(qs, 'Auftrags-Warteschlange im CRM', qs === 'ok' ? 'leer' : qs === 'warn' ? 'offen' : 'Fehler',
+        [['Offen (neu / in Arbeit)', (q.neu ?? 0) + ' / ' + (q.inArbeit ?? 0)], ['Ältester offener Eintrag', ts(q.aeltesteOffen)],
+         ['Fehler gesamt / letzte 24 h', (q.fehler ?? 0) + ' / ' + (q.fehler24h ?? 0)], ['Verarbeitet', q.verarbeitet ?? 0]],
+        list ? `<details><summary>Letzte Einträge</summary><ul>${list}</ul></details>` : ''));
+    }
+    // Flows
+    const fl = d.flows || [], off = fl.filter(f => !f.aktiv);
+    cards.push(sgCard(off.length ? 'warn' : 'ok', 'Flows', off.length ? off.length + ' deaktiviert' : 'aktiv',
+      fl.map(f => [esc(f.id), f.aktiv ? 'aktiv' : '<b>deaktiviert</b>'])));
+    // Aktionen
+    const acts = d.aktionen || [];
+    cards.push(sgCard('idle', 'Letzte Aktionen', acts.length + '', acts.length ? acts.map(a => { const i = a.indexOf('  '); return [esc(a.slice(0, i).replace('T', ' ')), esc(a.slice(i + 2))]; }) : [['–', 'noch keine']]));
+    $('sgCards').innerHTML = cards.join('');
+    $('sgMeta').textContent = 'Stand ' + d.zeit + ' · aktualisiert alle 15 s';
+    const worst = [dst, gst].includes('error') ? 'error' : [dst, gst].includes('warn') ? 'warn' : '';
+    $('sapBadge').className = 'badge' + (worst ? ' show' + (worst === 'warn' ? ' warn' : '') : ''); $('sapBadge').textContent = worst ? '!' : '';
+    const paused = !!gd.paused, up = g.erreichbar && !g.veraltet;
+    $('sgPause').disabled = !up || paused; $('sgResume').disabled = !up || !paused;
+    for (const b of ['sgStop', 'sgStart', 'sgRestart']) $(b).disabled = !sv.eingerichtet || sapBusy;
+    $('sgStart').disabled ||= z === 'active'; $('sgStop').disabled ||= z === 'inactive';
+  } catch (e) { $('sgCards').innerHTML = '<p style="color:var(--red)">' + esc(e.message) + '</p>'; }
+  sapTimer = setTimeout(loadSap, 15000);
+}
+async function sapAction(path, question) {
+  if (question && !confirm(question)) return;
+  sapBusy = true; $('sgMsg').textContent = 'wird ausgeführt …'; $('sgMsg').style.color = '';
+  try {
+    const r = JSON.parse(await api('/sapgw/' + path, { method: 'POST' }));
+    $('sgMsg').textContent = r.message || (r.ok ? 'erledigt' : 'fehlgeschlagen');
+    $('sgMsg').style.color = r.ok === false ? 'var(--red)' : 'var(--green)';
+  } catch (e) { $('sgMsg').textContent = e.message; $('sgMsg').style.color = 'var(--red)'; }
+  sapBusy = false; setTimeout(loadSap, path.startsWith('service/') ? 6000 : 500);
+}
+$('sgRefresh').onclick = loadSap;
+$('sgPause').onclick = () => sapAction('pause', 'SAP-Gateway anhalten? Neue Aufträge bleiben in der Warteschlange und werden nach dem Fortsetzen übertragen.');
+$('sgResume').onclick = () => sapAction('resume');
+$('sgStop').onclick = () => sapAction('service/stop', 'Gateway-Prozess auf der SAP-VM STOPPEN? Er startet erst wieder über „Starten“ oder einen Neustart der VM.');
+$('sgStart').onclick = () => sapAction('service/start');
+$('sgRestart').onclick = () => sapAction('service/restart', 'Gateway-Prozess neu starten? Er ist dabei ca. 10 Sekunden nicht erreichbar.');
 </script>
 </body>
 </html>

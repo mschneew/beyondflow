@@ -7,6 +7,39 @@
         period: "600000"
         delay: "60000"
       steps:
+        - doTry:
+            description: "Erst pruefen, ob das SAP-Gateway antwortet (sonst eine Warnung statt Fehler je Auftrag)"
+            steps:
+              - removeHeaders:
+                  pattern: "*"
+              - setBody:
+                  constant: ""
+              - setHeader:
+                  name: X-BF-Token
+                  constant: "{{env:BF_SAP_TOKEN}}"
+              - to:
+                  uri: "{{bf.sap.gateway}}/health"
+                  parameters:
+                    throwExceptionOnFailure: "false"
+                    connectionRequestTimeout: "5000"
+                    responseTimeout: "30000"
+              - setProperty:
+                  name: gwCode
+                  simple: "${header.CamelHttpResponseCode}"
+            doCatch:
+              - exception:
+                  - java.lang.Exception
+                steps:
+                  - setProperty:
+                      name: gwCode
+                      constant: "0"
+        - filter:
+            simple: "${exchangeProperty.gwCode} != 200"
+            steps:
+              - log:
+                  loggingLevel: WARN
+                  message: "SAP-Statusabgleich uebersprungen: SAP-Gateway nicht verfuegbar (HTTP ${exchangeProperty.gwCode}) - naechster Versuch in 10 Min."
+              - stop: {}
         - to:
             uri: "sql:select order_num, erp_order_num, nvl(erp_status_cd, '-') as erp_status_cd from siebel.cx_bf_order_v where erp_order_num is not null and length(erp_order_num) <= 10 and translate(erp_order_num, 'x0123456789', 'x') is null and nvl(erp_status_cd, '-') not in ('Fakturiert', 'Storniert', 'Fehler')"
             parameters:

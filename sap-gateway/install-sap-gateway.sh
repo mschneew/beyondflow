@@ -50,10 +50,52 @@ EnvironmentFile=$ENVF
 ExecStart=$JAVA/java -Xmx128m -Djava.library.path=/opt/sapjco3 -cp $D/classes:$JCO SapGateway
 Restart=on-failure
 RestartSec=10
+# Java beendet sich bei "systemctl stop" mit 143 (SIGTERM) - das ist ein normales Ende
+SuccessExitStatus=143
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+
+# ---------------------------------------------------------------- Steuerzugang fuer BeyondFlow (optional)
+# Eigener Benutzer bfctl, der per SSH NUR "status|start|stop|restart" des Dienstes sap-gateway ausfuehren darf:
+# erzwungener Befehl, nur von der IP der BeyondFlow-VM, keine Shell, keine Weiterleitungen, sudo nur fuer systemctl.
+sudo tee /usr/local/bin/sap-gateway-ctl >/dev/null <<'CTL'
+#!/bin/bash
+# Erzwungener Befehl fuer den SSH-Steuerzugang von BeyondFlow. Alles andere wird abgelehnt.
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  status) ;;
+  start|stop|restart) sudo -n /usr/bin/systemctl "$SSH_ORIGINAL_COMMAND" sap-gateway; sleep 4 ;;
+  *) echo "nicht erlaubt"; exit 1 ;;
+esac
+logger -t sap-gateway-ctl "BeyondFlow: ${SSH_ORIGINAL_COMMAND:-} von ${SSH_CLIENT%% *}"
+systemctl is-active sap-gateway
+CTL
+sudo chmod 755 /usr/local/bin/sap-gateway-ctl
+id bfctl >/dev/null 2>&1 || sudo useradd -m -s /bin/bash -c "BeyondFlow Steuerzugang SAP-Gateway" bfctl
+sudo passwd -l bfctl >/dev/null 2>&1 || true
+SUD=/etc/sudoers.d/bfctl-sap-gateway
+printf 'bfctl ALL=(root) NOPASSWD: /usr/bin/systemctl start sap-gateway, /usr/bin/systemctl stop sap-gateway, /usr/bin/systemctl restart sap-gateway\n' | sudo tee $SUD.tmp >/dev/null
+sudo chmod 440 $SUD.tmp && sudo visudo -cqf $SUD.tmp && sudo mv $SUD.tmp $SUD || { sudo rm -f $SUD.tmp; echo "sudoers-Regel fehlerhaft - nicht uebernommen"; }
+AK=/home/bfctl/.ssh/authorized_keys
+if sudo test -s $AK; then
+  echo "Steuerzugang bfctl: eingerichtet (Schluessel neu setzen: sudo rm $AK und Skript erneut starten)"
+elif [ -t 0 ]; then
+  echo
+  echo "Steuerzugang fuer den Reiter \"SAP-Gateway\" im BeyondFlow Studio:"
+  echo "Auf der BeyondFlow-VM anzeigen:  cat ~/.ssh/bf_sapctl.pub   (eine Zeile, beginnt mit ssh-ed25519)"
+  read -rp "Diese Zeile hier einfuegen (Enter = ueberspringen): " PUB
+  if [ -n "$PUB" ]; then
+    FROM=$(echo "$PUB" | sed -n 's/.*beyondflow@\([0-9.]*\).*/\1/p')
+    [ -z "$FROM" ] && read -rp "Private IP der BeyondFlow-VM: " FROM
+    sudo install -d -m 700 -o bfctl -g bfctl /home/bfctl/.ssh
+    echo "command=\"/usr/local/bin/sap-gateway-ctl\",from=\"$FROM\",no-port-forwarding,no-pty,no-agent-forwarding,no-X11-forwarding,no-user-rc $PUB" | sudo tee $AK >/dev/null
+    sudo chown bfctl:bfctl $AK && sudo chmod 600 $AK
+    command -v restorecon >/dev/null && sudo restorecon -R /home/bfctl/.ssh || true
+    echo "Steuerzugang bfctl: eingerichtet (nur von $FROM)"
+  fi
+fi
 
 if systemctl is-active --quiet firewalld; then
   sudo firewall-cmd --quiet --permanent --add-port=8095/tcp && sudo firewall-cmd --quiet --reload

@@ -4,6 +4,19 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.21 – 25.11.2026 – Reiter „SAP-Gateway“ · **Gateway-Update nötig**
+- Studio: neuer Reiter **SAP-Gateway** mit Ampel für Dienst, Gateway-Prozess (inkl. SAP-Verbindung), Auftrags-Warteschlange im CRM und die beteiligten Flows; aktualisiert sich alle 15 Sekunden.
+  - **Anhalten / Fortsetzen:** Das Gateway lehnt Aufträge mit HTTP 503 ab, BeyondFlow wiederholt sie später. Der Zustand überlebt einen Neustart (`~/sapgateway/PAUSED`).
+  - **Stoppen / Starten / Neu starten** des Dienstes über einen eingeschränkten SSH-Zugang (Benutzer `bfctl`, erzwungener Befehl, nur von der BeyondFlow-VM, `sudo` nur für diese drei `systemctl`-Aufrufe). Mit Rückfrage; jede Aktion wird protokolliert.
+- SAP-Gateway: `GET /admin/status` (Laufzeit, SAP-Ping, Zähler, letzter Erfolg/Fehler), `POST /admin/pause|resume`. `SuccessExitStatus=143`, damit ein Stopp nicht als „failed“ erscheint.
+- Studio-API: `GET /api/sapgw/status`, `POST /api/sapgw/pause|resume|service/{start|stop|restart}`.
+- `CX_BF_CHECK`: neuer Typ `sapqueue` (Zähler und letzte 8 Einträge der SAP-Outbox).
+- Installer: erzeugt den Steuerschlüssel `~/.ssh/bf_sapctl`. Gateway-Installer: richtet `bfctl` ein.
+- Log aufgeräumt:
+  - `sap-status-to-crm` prüft vorher `/health` und überspringt den Lauf mit einer Warnung, statt bei gestopptem Gateway pro Auftrag Fehler zu schreiben.
+  - `sf-opportunities-to-crm` schreibt die Meldung des CRM lesbar ins Log („… kein CRM-Auftrag, neuer Versuch beim nächsten Abgleich“).
+  - Assistent: erkennt diese Meldungen; ServiceNow-Wiederholungen nach 5xx zählen nicht als Fehler.
+
 ## 0.20 – 25.11.2026 – ServiceNow: nur Änderungen, Wiederholung bei 5xx
 - `snow-accounts-to-crm` und `snow-contacts-to-crm` holen nur Datensätze, die in den letzten 15 Minuten geändert wurden.
   - Abfrage: `sys_updated_onRELATIVEGE@minute@ago@15`, ohne Klammern, damit `RAW()` nicht bricht.

@@ -176,6 +176,13 @@ if [ -n "$BF_SF_URL" ]; then
   secret BF_SF_CLIENT_SECRET "Salesforce Consumer Secret"
 fi
 [ -n "$BF_SAP_GATEWAY" ] && secret BF_SAP_TOKEN "Token des SAP-Gateways (sudo grep GW_TOKEN /etc/sap-bridge.env auf der SAP-VM)"
+# Schluessel fuer den eingeschraenkten Steuerzugang zur SAP-VM (Reiter "SAP-Gateway": Starten/Stoppen).
+# Bleibt auf dieser VM; auf der SAP-VM darf er nur status|start|stop|restart des Gateway-Dienstes ausloesen.
+if [ -n "$BF_SAP_GATEWAY" ] && [ ! -f ~/.ssh/bf_sapctl ]; then
+  mkdir -p ~/.ssh && chmod 700 ~/.ssh
+  ssh-keygen -q -t ed25519 -N "" -C "beyondflow@$(hostname -I | awk '{print $1}')" -f ~/.ssh/bf_sapctl
+  echo "Steuerschluessel fuer das SAP-Gateway erzeugt: ~/.ssh/bf_sapctl.pub (beim Gateway-Installer einfuegen)"
+fi
 secret BF_AI_KEY "Anthropic API-Key fuer den KI-Assistenten" optional
 echo "secrets.env vollstaendig (Werte werden nicht angezeigt)"
 

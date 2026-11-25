@@ -5,6 +5,7 @@
 --   account/<ROW_ID>             z. B. account/1-30K          Stammdaten, Externe IDs, Anzahl Kontakte
 --   kontakt/<ROW_ID>             z. B. kontakt/1-30G          Stammdaten, zugeordneter Account, Externe IDs
 --   extern/<System>:<Externe ID> z. B. extern/SNOW:71a2...    Welcher CRM-Datensatz gehoert zu einer externen ID?
+--   sapqueue/alle                                            SAP-Ausgangsqueue: Anzahl je Status, letzte 8 Eintraege
 
 CREATE OR REPLACE PACKAGE siebel.cx_bf_check AS
   PROCEDURE get(p_type IN VARCHAR2, p_key IN VARCHAR2, o_json OUT VARCHAR2);
@@ -95,8 +96,25 @@ CREATE OR REPLACE PACKAGE BODY siebel.cx_bf_check AS
                          RETURNING VARCHAR2(32767))
         INTO o_json FROM siebel.s_ext_ref WHERE ext_sys_cd = l_sys AND ext_id = l_ext;
 
+    WHEN 'sapqueue' THEN
+      SELECT JSON_OBJECT('found' VALUE 'true' FORMAT JSON, 'typ' VALUE 'sapqueue',
+               'neu'         VALUE (SELECT COUNT(*) FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd = 'Neu'),
+               'inArbeit'    VALUE (SELECT COUNT(*) FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd = 'In Arbeit'),
+               'fehler'      VALUE (SELECT COUNT(*) FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd = 'Fehler'),
+               'verarbeitet' VALUE (SELECT COUNT(*) FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd = 'Verarbeitet'),
+               'fehler24h'   VALUE (SELECT COUNT(*) FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd = 'Fehler' AND last_upd > SYSDATE - 1),
+               'aeltesteOffen' VALUE (SELECT TO_CHAR(MIN(created), 'YYYY-MM-DD"T"HH24:MI:SS') FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' AND status_cd IN ('Neu','In Arbeit')),
+               'letzte' VALUE (SELECT JSON_ARRAYAGG(JSON_OBJECT('auftrag' VALUE o.order_num, 'status' VALUE x.status_cd, 'versuche' VALUE x.retry_cnt,
+                                                               'meldung' VALUE SUBSTR(x.err_msg, 1, 200),
+                                                               'geaendert' VALUE TO_CHAR(x.last_upd, 'YYYY-MM-DD"T"HH24:MI:SS'))
+                                                   ORDER BY x.last_upd DESC RETURNING VARCHAR2(16000))
+                                 FROM (SELECT * FROM siebel.s_int_outbox WHERE ext_sys_cd = 'SAP_S4' ORDER BY last_upd DESC FETCH FIRST 8 ROWS ONLY) x
+                                 LEFT JOIN siebel.s_order o ON o.row_id = x.record_id) FORMAT JSON
+               RETURNING VARCHAR2(32767))
+        INTO o_json FROM dual;
+
     ELSE
-      o_json := JSON_OBJECT('found' VALUE 'false' FORMAT JSON, 'fehler' VALUE 'Unbekannter Typ (erlaubt: auftrag, account, kontakt, extern)');
+      o_json := JSON_OBJECT('found' VALUE 'false' FORMAT JSON, 'fehler' VALUE 'Unbekannter Typ (erlaubt: auftrag, account, kontakt, extern, sapqueue)');
     END CASE;
   END;
 END cx_bf_check;

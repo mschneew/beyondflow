@@ -8,7 +8,7 @@
       steps:
         - choice:
             when:
-              - simple: "${header.typ} regex '(auftrag|account|kontakt|extern)' && ${header.key} regex '[A-Za-z0-9:._-]{1,100}'"
+              - simple: "${header.typ} regex '(auftrag|account|kontakt|extern|sapqueue)' && ${header.key} regex '[A-Za-z0-9:._-]{1,100}'"
                 steps:
                   - setProperty:
                       name: typ

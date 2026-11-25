@@ -27,6 +27,16 @@ public class SapGateway {
 
     static JCoDestination sap;
     static String token;
+    // Betriebszustand fuer /admin/status (BeyondFlow Studio, Reiter SAP-Gateway)
+    static final long STARTED = System.currentTimeMillis();
+    static final java.io.File PAUSE_FILE = new java.io.File(System.getProperty("user.home"), "sapgateway/PAUSED");
+    static volatile boolean paused = PAUSE_FILE.exists();
+    static final java.util.concurrent.atomic.AtomicLong CNT_CREATED = new java.util.concurrent.atomic.AtomicLong();
+    static final java.util.concurrent.atomic.AtomicLong CNT_BUSINESS = new java.util.concurrent.atomic.AtomicLong();
+    static final java.util.concurrent.atomic.AtomicLong CNT_TECHNICAL = new java.util.concurrent.atomic.AtomicLong();
+    static final java.util.concurrent.atomic.AtomicLong CNT_REQUESTS = new java.util.concurrent.atomic.AtomicLong();
+    static volatile Map<String, Object> lastOk = null, lastErr = null;
+    static String now() { return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(new Date()); }
 
     public static void main(String[] a) throws Exception {
         final Properties p = new Properties();
@@ -66,7 +76,20 @@ public class SapGateway {
                 send(ex, 401, obj("ok", false, "technical", false, "message", "Token fehlt oder falsch"));
                 return;
             }
-            if (path.equals("/health") && m.equals("GET")) {
+            if (!path.startsWith("/admin")) CNT_REQUESTS.incrementAndGet();
+            if (path.equals("/admin/status") && m.equals("GET")) {
+                res = adminStatus();
+            } else if (path.equals("/admin/pause") && m.equals("POST")) {
+                paused = true; try { PAUSE_FILE.getParentFile().mkdirs(); PAUSE_FILE.createNewFile(); } catch (IOException ignore) {}
+                log("ANGEHALTEN ueber /admin/pause");
+                res = obj("ok", true, "paused", true, "message", "SAP-Gateway angehalten – neue Auftraege werden abgewiesen, BeyondFlow wiederholt sie spaeter");
+            } else if (path.equals("/admin/resume") && m.equals("POST")) {
+                paused = false; PAUSE_FILE.delete();
+                log("FORTGESETZT ueber /admin/resume");
+                res = obj("ok", true, "paused", false, "message", "SAP-Gateway fortgesetzt");
+            } else if (paused) {
+                code = 503; res = obj("ok", false, "technical", true, "paused", true, "message", "SAP-Gateway ist angehalten");
+            } else if (path.equals("/health") && m.equals("GET")) {
                 sap.ping();
                 res = obj("ok", true, "message", "SAP erreichbar");
             } else if (path.equals("/salesorder") && m.equals("POST")) {
@@ -80,18 +103,34 @@ public class SapGateway {
             }
         } catch (BusinessError e) {
             log("fachlicher Fehler: " + e.getMessage());
+            CNT_BUSINESS.incrementAndGet(); lastErr = obj("zeit", now(), "technisch", false, "meldung", e.getMessage());
             res = obj("ok", false, "technical", false, "message", e.getMessage());
         } catch (JCoException e) {
             boolean technical = e.getGroup() == JCoException.JCO_ERROR_COMMUNICATION || e.getGroup() == JCoException.JCO_ERROR_SYSTEM_FAILURE
                 || e.getGroup() == JCoException.JCO_ERROR_RESOURCE || e.getGroup() == JCoException.JCO_ERROR_STATE_BUSY
                 || e.getGroup() == JCoException.JCO_ERROR_LOGON_FAILURE;
             log("SAP-Fehler: " + e.getMessage());
+            if (technical) CNT_TECHNICAL.incrementAndGet(); else CNT_BUSINESS.incrementAndGet();
+            lastErr = obj("zeit", now(), "technisch", technical, "meldung", "SAP: " + e.getMessage());
             res = obj("ok", false, "technical", technical, "message", "SAP: " + e.getMessage());
         } catch (Exception e) {
             log("interner Fehler: " + e);
             res = obj("ok", false, "technical", false, "message", "Gateway: " + e);
         }
         send(ex, code, res);
+    }
+
+    // ---------------- Betrieb ----------------
+
+    static Map<String, Object> adminStatus() {
+        long t0 = System.currentTimeMillis();
+        Map<String, Object> ping;
+        try { sap.ping(); ping = obj("ok", true, "ms", System.currentTimeMillis() - t0, "meldung", "RFC_PING erfolgreich"); }
+        catch (JCoException e) { ping = obj("ok", false, "ms", System.currentTimeMillis() - t0, "meldung", e.getMessage()); }
+        return obj("ok", true, "paused", paused, "gestartet", new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(new Date(STARTED)),
+            "laufzeitSek", (System.currentTimeMillis() - STARTED) / 1000, "sapPing", ping,
+            "anfragen", CNT_REQUESTS.get(), "angelegt", CNT_CREATED.get(), "fachlicheFehler", CNT_BUSINESS.get(),
+            "technischeFehler", CNT_TECHNICAL.get(), "letzterErfolg", lastOk, "letzterFehler", lastErr);
     }
 
     // ---------------- Kundenauftrag ----------------
@@ -123,6 +162,7 @@ public class SapGateway {
         callCreate(o, soldTo, items, true);
         String[] r = callCreate(o, soldTo, items, false);
         log("  angelegt: " + r[0]);
+        CNT_CREATED.incrementAndGet(); lastOk = obj("zeit", now(), "vbeln", r[0], "bestellnr", purchNo);
         return obj("ok", true, "vbeln", r[0], "existing", false, "message", r[1]);
     }
 

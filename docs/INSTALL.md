@@ -149,6 +149,24 @@ Auf der **SAP-Gateway-VM** (Abschnitt 1.2) als `opc`:
    - Er erzeugt ein Token und startet den Dienst `sap-gateway`.
 4. Am Ende muss stehen: `Test: {"ok":true,…}`. Die ausgegebene **Gateway-Adresse** als `BF_SAP_GATEWAY` notieren.
 
+### 5.1 Steuerzugang für den Reiter „SAP-Gateway“ (empfohlen)
+
+Im Studio zeigt der Reiter **SAP-Gateway** den Zustand des Gateways, der SAP-Verbindung und der Auftrags-Warteschlange.
+- **Anhalten / Fortsetzen** wirkt im Gateway selbst und braucht nichts weiter.
+- **Stoppen / Starten / Neu starten** des Dienstes läuft über einen eingeschränkten SSH-Zugang:
+  - Benutzer `bfctl` auf der SAP-Gateway-VM, ohne Passwort.
+  - Der Schlüssel erlaubt nur den erzwungenen Befehl `/usr/local/bin/sap-gateway-ctl` mit `status|start|stop|restart`, nur von der IP der BeyondFlow-VM, ohne Terminal und ohne Weiterleitungen.
+  - `sudo` ist nur für `systemctl start|stop|restart sap-gateway` erlaubt (`/etc/sudoers.d/bfctl-sap-gateway`).
+  - Jede Aktion steht im Studio unter „Letzte Aktionen“ (`~/beyondflow/logs/sapgw-actions.log`) und im Journal der SAP-VM (`journalctl -t sap-gateway-ctl`).
+
+Einrichtung:
+1. BeyondFlow installieren (Abschnitt 6). Der Installer erzeugt dabei den Schlüssel `~/.ssh/bf_sapctl`, der die VM nie verlässt.
+2. Auf der BeyondFlow-VM den **öffentlichen** Teil anzeigen: `cat ~/.ssh/bf_sapctl.pub`.
+3. Auf der SAP-Gateway-VM den Gateway-Installer (erneut) starten und die Zeile einfügen, wenn er danach fragt. Die erlaubte Absender-IP liest er aus dem Kommentar `beyondflow@<IP>`.
+4. Port 22 von der BeyondFlow-VM zur SAP-Gateway-VM muss im privaten Netz offen sein (OCI-Standard).
+
+Ohne Steuerzugang zeigt der Reiter „nicht eingerichtet“; Status und Anhalten/Fortsetzen funktionieren trotzdem.
+
 Benötigte Berechtigungen des RFC-Benutzers (S_RFC und Vertrieb):
 - `RFC_PING`
 - `BAPI_SALESORDER_CREATEFROMDAT2`
@@ -219,11 +237,13 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
    2. Innerhalb von Sekunden (Ereignis) bzw. 15 Minuten (Timer) muss im CRM ein Auftrag `AU-…` entstehen.
    3. Danach entsteht der SAP-Auftrag. Die Felder `BeyondCRM_Auftrag__c`, `SAP_Auftrag__c` und `ERP_Status__c` an der Opportunity sind gefüllt.
 5. **Log:** keine roten Einträge nach dem Start.
-6. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
+6. **SAP-Gateway** (wenn angebunden): Im Reiter „SAP-Gateway“ sind Dienst, Gateway-Prozess und Warteschlange grün.
+7. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
    - `http://localhost:8080/api/crm/check/auftrag/AU-2026-0408`
    - `…/account/<ROW_ID>`
    - `…/kontakt/<ROW_ID>`
    - `…/extern/SNOW:<sys_id>`
+   - `…/sapqueue/alle` (Warteschlange zu SAP)
 
 ## 8. Updates
 
@@ -233,6 +253,11 @@ Updates laufen **automatisch**:
 - Dabei starten die Laufzeiten kurz neu; Timer-Flows holen Versäumtes beim nächsten Lauf nach.
 - Protokoll: `~/beyondflow/logs/update.log`
 - Abschalten: `systemctl --user disable --now beyondflow-update.timer`, oder dauerhaft `BF_AUTO_UPDATE=no` in `~/beyondflow.conf`.
+
+Das **SAP-Gateway** wird nicht automatisch aktualisiert, weil es auf einer eigenen VM läuft und ein Neustart dort laufende SAP-Aufrufe trifft. Wenn das Änderungsprotokoll ein Gateway-Update nennt, auf der SAP-Gateway-VM:
+```bash
+cd ~/beyondflow-src && git pull && bash sap-gateway/install-sap-gateway.sh
+```
 
 Von Hand, etwa um neue Geheimnisse einzugeben:
 ```bash

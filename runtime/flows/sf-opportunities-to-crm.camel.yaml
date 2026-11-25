@@ -75,6 +75,11 @@
                             message: "Opportunity ${exchangeProperty.label} -> CRM-Auftrag ${exchangeProperty.orderNum} (an SAP uebergeben)"
                   otherwise:
                     steps:
+                      - setProperty:
+                          name: errMsg
+                          jq:
+                            expression: '.message // tostring'
+                            resultType: java.lang.String
                       - log:
                           loggingLevel: WARN
-                          message: "Opportunity ${exchangeProperty.label}: ${body}"
+                          message: "Opportunity ${exchangeProperty.label}: ${exchangeProperty.errMsg} - kein CRM-Auftrag, neuer Versuch beim naechsten Abgleich"
