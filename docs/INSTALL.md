@@ -72,6 +72,7 @@ In der OCI-Konsole: Autonomous Database → **Database Actions → SQL**, angeme
 | `40_cx_bf_sap.sql` | Paket `CX_BF_SAP` (Auftrag → SAP, Status zurück) |
 | `50_cx_bf_sfdc.sql` | Paket `CX_BF_SFDC`, Tabelle `CX_BF_SYNC_STATE` (Salesforce) |
 | `60_grants.sql` | Rechte von `BEYONDFLOW` zusammengefasst, mit Kontrolle (5 Zeilen) |
+| `70_cx_bf_check.sql` | Paket `CX_BF_CHECK`: nur lesende Prüfabfragen für Tests und Betrieb, im Studio unter `/api/crm/check/<typ>/<schlüssel>` |
 
 Ohne SAP oder Salesforce lassen sich die Skripte 30/40 bzw. 50 weglassen. Dann schlagen in `60_grants.sql` die zugehörigen Zeilen fehl; das ist unkritisch.
 
@@ -218,6 +219,11 @@ BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
    2. Innerhalb von Sekunden (Ereignis) bzw. 15 Minuten (Timer) muss im CRM ein Auftrag `AU-…` entstehen.
    3. Danach entsteht der SAP-Auftrag. Die Felder `BeyondCRM_Auftrag__c`, `SAP_Auftrag__c` und `ERP_Status__c` an der Opportunity sind gefüllt.
 5. **Log:** keine roten Einträge nach dem Start.
+6. **Gegenprobe im CRM ohne Datenbank-Anmeldung** (bei offenem Tunnel), Beispiele:
+   - `http://localhost:8080/api/crm/check/auftrag/AU-2026-0408`
+   - `…/account/<ROW_ID>`
+   - `…/kontakt/<ROW_ID>`
+   - `…/extern/SNOW:<sys_id>`
 
 ## 8. Updates
 

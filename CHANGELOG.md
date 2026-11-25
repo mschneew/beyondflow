@@ -4,6 +4,14 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.19 – 25.11.2026 – Prüfabfragen ins CRM
+- Paket `CX_BF_CHECK` (`db/70_cx_bf_check.sql`): feste, nur lesende Abfragen als JSON.
+  - Typen: `auftrag`, `account`, `kontakt`, `extern`.
+  - Liefert Auftrag samt Positionen, Externen IDs und SAP-Outbox, Account und Kontakt mit Zuordnung sowie die Auflösung externer IDs.
+- Flow `crm-check`: `GET /check/{typ}/{key}`, nur lokal auf 127.0.0.1:8091.
+- Studio-API: `GET /api/crm/check/{typ}/{key}`.
+- Tests lassen sich damit ohne Datenbank-Anmeldung gegenprüfen. Das Datenbankpasswort bleibt auf der VM.
+
 ## 0.18 – 25.11.2026 – Ereignis-Flow korrigiert, Flow-Updates
 - `event-sf-opportunity`: Der Filter liest die Phase direkt aus dem Ereignis-Body.
   - Camel liefert den `ChangeEventHeader` nicht im Body. Deshalb brach jedes CDC-Ereignis mit `RuntimeBeanExpressionException` ab.

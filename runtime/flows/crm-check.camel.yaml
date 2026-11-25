@@ -1,0 +1,36 @@
+- route:
+    id: crm-check
+    description: "Pruefabfragen (nur lesend, nur 127.0.0.1:8091): GET /check/{typ}/{key} -> JSON aus siebel.cx_bf_check. Im Studio unter /api/crm/check/..."
+    from:
+      uri: "platform-http:/check/{typ}/{key}"
+      parameters:
+        httpMethodRestrict: GET
+      steps:
+        - choice:
+            when:
+              - simple: "${header.typ} regex '(auftrag|account|kontakt|extern)' && ${header.key} regex '[A-Za-z0-9:._-]{1,100}'"
+                steps:
+                  - setProperty:
+                      name: typ
+                      simple: "${header.typ}"
+                  - setProperty:
+                      name: key
+                      simple: "${header.key}"
+                  - removeHeaders:
+                      pattern: "*"
+                  - to:
+                      uri: "sql-stored:siebel.cx_bf_check.get(VARCHAR ${exchangeProperty.typ},VARCHAR ${exchangeProperty.key},OUT VARCHAR result)"
+                      parameters:
+                        dataSource: "#crmdb"
+                  - setBody:
+                      simple: "${body[result]}"
+                  - setHeader:
+                      name: Content-Type
+                      constant: "application/json; charset=utf-8"
+            otherwise:
+              steps:
+                - setHeader:
+                    name: CamelHttpResponseCode
+                    constant: 400
+                - setBody:
+                    constant: '{"found":false,"fehler":"Erlaubt: /check/auftrag|account|kontakt|extern/<Schluessel>"}'

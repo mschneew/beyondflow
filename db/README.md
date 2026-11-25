@@ -10,6 +10,7 @@ Als `ADMIN` in Database Actions → SQL, in Nummernreihenfolge als Skript (F5) a
 | `40_cx_bf_sap.sql` | Paket CX_BF_SAP |
 | `50_cx_bf_sfdc.sql` | Paket CX_BF_SFDC, Tabelle CX_BF_SYNC_STATE |
 | `60_grants.sql` | Rechte von BEYONDFLOW, Kontrolle |
+| `70_cx_bf_check.sql` | Paket CX_BF_CHECK (nur lesende Prüfabfragen) |
 
 Stand: 25.11.2026 aus der Referenz-DB exportiert. Die Pakete und Sichten sind per Prüfsumme mit der Datenbank abgeglichen.
 

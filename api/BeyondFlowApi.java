@@ -64,6 +64,18 @@ public class BeyondFlowApi {
             send(ex, 200, "text/plain", Files.exists(v) ? new String(Files.readAllBytes(v), StandardCharsets.UTF_8).trim() : "unbekannt");
         });
         for (String c : new String[]{ "/api/insights", "/api/check", "/api/pause", "/api/resume" }) s.createContext(c, Ops::handle);
+        // Pruefabfragen ins CRM (nur lesend): /api/crm/check/{typ}/{key} -> Flow crm-check auf 127.0.0.1:8091
+        s.createContext("/api/crm/check/", ex -> {
+            if (!ex.getRequestMethod().equals("GET")) { send(ex, 405, "text/plain", "Methode nicht erlaubt"); return; }
+            String rest = ex.getRequestURI().getRawPath().substring("/api/crm/check/".length());
+            if (!rest.matches("(auftrag|account|kontakt|extern)/[A-Za-z0-9:._-]{1,100}")) {
+                send(ex, 400, "application/json", "{\"found\":false,\"fehler\":\"Erlaubt: /api/crm/check/auftrag|account|kontakt|extern/<Schluessel>\"}");
+                return;
+            }
+            String[] r = Ops.http(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:8091/check/" + rest)).GET());
+            if (r[0].equals("0")) { send(ex, 503, "application/json", "{\"found\":false,\"fehler\":\"Laufzeit nicht erreichbar\"}"); return; }
+            send(ex, Integer.parseInt(r[0]), "application/json; charset=utf-8", r[1]);
+        });
         s.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
         s.start();
         System.out.println("BeyondFlow API auf 127.0.0.1:" + port + ", Flows in " + FLOWS);
