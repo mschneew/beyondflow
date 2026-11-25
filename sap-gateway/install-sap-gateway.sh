@@ -81,11 +81,17 @@ sudo chmod 440 $SUD.tmp && sudo visudo -cqf $SUD.tmp && sudo mv $SUD.tmp $SUD ||
 AK=/home/bfctl/.ssh/authorized_keys
 if sudo test -s $AK; then
   echo "Steuerzugang bfctl: eingerichtet (Schluessel neu setzen: sudo rm $AK und Skript erneut starten)"
-elif [ -t 0 ]; then
-  echo
-  echo "Steuerzugang fuer den Reiter \"SAP-Gateway\" im BeyondFlow Studio:"
-  echo "Auf der BeyondFlow-VM anzeigen:  cat ~/.ssh/bf_sapctl.pub   (eine Zeile, beginnt mit ssh-ed25519)"
-  read -rp "Diese Zeile hier einfuegen (Enter = ueberspringen): " PUB
+else
+  PUB=""
+  # Oeffentlicher Schluessel der BeyondFlow-VM: Datei bf_sapctl.pub neben diesem Skript oder Eingabe
+  if [ -f "$SRC/bf_sapctl.pub" ]; then PUB=$(head -1 "$SRC/bf_sapctl.pub"); echo "Steuerschluessel aus $SRC/bf_sapctl.pub"
+  elif [ -t 0 ]; then
+    echo
+    echo "Steuerzugang fuer den Reiter \"SAP-Gateway\" im BeyondFlow Studio:"
+    echo "Auf der BeyondFlow-VM anzeigen:  cat ~/.ssh/bf_sapctl.pub   (eine Zeile, beginnt mit ssh-ed25519)"
+    read -rp "Diese Zeile hier einfuegen (Enter = ueberspringen): " PUB
+  fi
+  case "$PUB" in ssh-ed25519\ *|"") ;; *) echo "Das ist kein oeffentlicher ed25519-Schluessel - uebersprungen"; PUB="" ;; esac
   if [ -n "$PUB" ]; then
     FROM=$(echo "$PUB" | sed -n 's/.*beyondflow@\([0-9.]*\).*/\1/p')
     [ -z "$FROM" ] && read -rp "Private IP der BeyondFlow-VM: " FROM

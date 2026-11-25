@@ -162,7 +162,7 @@ Im Studio zeigt der Reiter **SAP-Gateway** den Zustand des Gateways, der SAP-Ver
 Einrichtung:
 1. BeyondFlow installieren (Abschnitt 6). Der Installer erzeugt dabei den Schlüssel `~/.ssh/bf_sapctl`, der die VM nie verlässt.
 2. Auf der BeyondFlow-VM den **öffentlichen** Teil anzeigen: `cat ~/.ssh/bf_sapctl.pub`.
-3. Auf der SAP-Gateway-VM den Gateway-Installer (erneut) starten und die Zeile einfügen, wenn er danach fragt. Die erlaubte Absender-IP liest er aus dem Kommentar `beyondflow@<IP>`.
+3. Auf der SAP-Gateway-VM den Gateway-Installer (erneut) starten und die Zeile einfügen, wenn er danach fragt – oder die Datei `bf_sapctl.pub` vorher neben das Skript legen, dann liest er sie selbst. Die erlaubte Absender-IP liest er aus dem Kommentar `beyondflow@<IP>`.
 4. Port 22 von der BeyondFlow-VM zur SAP-Gateway-VM muss im privaten Netz offen sein (OCI-Standard).
 
 Ohne Steuerzugang zeigt der Reiter „nicht eingerichtet“; Status und Anhalten/Fortsetzen funktionieren trotzdem.
