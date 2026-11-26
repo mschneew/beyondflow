@@ -10,7 +10,7 @@ B=$HOME/beyondflow; S=$B/config/secrets.env
 source "$HOME/beyondflow.conf"
 : "${BF_VAULT_OCID:?BF_VAULT_OCID fehlt in ~/beyondflow.conf}" "${BF_VAULT_KEY_OCID:?BF_VAULT_KEY_OCID fehlt in ~/beyondflow.conf}"
 V="python3 $SRC/vault/bf-vault.py"
-python3 -c 'import oci' 2>/dev/null || { echo "installiere OCI-SDK fuer Python ..."; sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || python3 -m pip install --user -q oci; }
+python3 -c 'import oci' 2>/dev/null || { echo "installiere OCI-SDK fuer Python ..."; sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || { sudo dnf install -y python3-pip >/dev/null 2>&1; python3 -m pip install --user -q oci; }; }
 
 echo "== 1/4 Zugriff auf den Vault pruefen"
 $V check --vault "$BF_VAULT_OCID" --prefix BF_

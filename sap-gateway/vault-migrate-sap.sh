@@ -6,7 +6,7 @@ set -euo pipefail
 VAULT=${1:?Vault-OCID fehlt}; KEY=${2:?Key-OCID fehlt}
 SRC=$(cd "$(dirname "$0")" && pwd)
 ENVF=/etc/sap-bridge.env
-python3 -c 'import oci' 2>/dev/null || { echo "installiere OCI-SDK fuer Python ..."; sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || sudo python3 -m pip install -q oci; }
+python3 -c 'import oci' 2>/dev/null || { echo "installiere OCI-SDK fuer Python ..."; sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || { sudo dnf install -y python3-pip >/dev/null 2>&1; sudo python3 -m pip install -q oci; }; }
 sudo install -d -m 755 /usr/local/lib/sapgw
 sudo install -m 755 "$SRC/bf-vault.py" /usr/local/lib/sapgw/bf-vault.py
 V="sudo python3 /usr/local/lib/sapgw/bf-vault.py"

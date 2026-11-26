@@ -60,7 +60,7 @@ command -v java >/dev/null && java -version 2>&1 | grep -qE 'version "(2[1-9]|[3
 for p in git podman python3 unzip curl; do command -v $p >/dev/null || PKGS="$PKGS $p"; done
 if [ -n "$PKGS" ]; then sudo dnf install -y $PKGS; else echo "vorhanden"; fi
 if [ -n "$BF_VAULT_OCID" ] && ! python3 -c 'import oci' 2>/dev/null; then
-  sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || python3 -m pip install --user -q oci
+  sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || { sudo dnf install -y python3-pip >/dev/null 2>&1; python3 -m pip install --user -q oci; }
 fi
 sudo loginctl enable-linger "$USER"   # Benutzerdienste laufen auch ohne Anmeldung
 
