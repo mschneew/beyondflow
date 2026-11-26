@@ -19,6 +19,10 @@ BF_PUBLIC_HOST=                          # oeffentliche IP der VM, z. B. 92.5.x.
                                          # (noetig fuer Ereignisse aus ServiceNow; OCI: 443 und 80 eingehend freigeben)
 BF_PUBLIC_NAME=                          # DNS-Name dieser IP fuer das Zertifikat; leer = <ip-mit-bindestrichen>.sslip.io
 
+# --- Geheimnisse in OCI Vault (optional, docs/INSTALL.md 6.1; aktiv erst nach install/vault-migrate.sh) ---
+BF_VAULT_OCID=                           # ocid1.vault...
+BF_VAULT_KEY_OCID=                       # ocid1.key... (nur fuer die Uebertragung noetig)
+
 # --- Versionen (fuer reproduzierbare Installationen festgeschrieben) ---
 BF_CAMEL_VERSION=4.22.0
 BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app:main   # Empfehlung: auf @sha256-Digest festschreiben (install meldet ihn)

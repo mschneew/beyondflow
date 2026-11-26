@@ -46,6 +46,9 @@ BF_CAMEL_VERSION=${BF_CAMEL_VERSION:-4.22.0}
 BF_KAOTO_IMAGE=${BF_KAOTO_IMAGE:-quay.io/kaotoio/kaoto-app:main}
 BF_WALLET_ZIP=${BF_WALLET_ZIP:-}
 BF_WALLET_ZIP=${BF_WALLET_ZIP/#\~/$HOME}
+BF_VAULT_OCID=${BF_VAULT_OCID:-}; BF_VAULT_KEY_OCID=${BF_VAULT_KEY_OCID:-}
+# Vault-Betrieb erst, wenn install/vault-migrate.sh die Geheimnisse uebertragen und geprueft hat (Marker config/vault-active)
+VAULT=0; [ -n "$BF_VAULT_OCID" ] && [ -f "$HOME/beyondflow/config/vault-active" ] && VAULT=1
 
 echo "BeyondFlow $VERSION – Installation nach $B"
 [ -f $B/VERSION ] && echo "bisher installiert: $(cat $B/VERSION)"
@@ -56,6 +59,9 @@ PKGS=""
 command -v java >/dev/null && java -version 2>&1 | grep -qE 'version "(2[1-9]|[3-9][0-9])' || PKGS="$PKGS java-21-openjdk-devel"
 for p in git podman python3 unzip curl; do command -v $p >/dev/null || PKGS="$PKGS $p"; done
 if [ -n "$PKGS" ]; then sudo dnf install -y $PKGS; else echo "vorhanden"; fi
+if [ -n "$BF_VAULT_OCID" ] && ! python3 -c 'import oci' 2>/dev/null; then
+  sudo dnf install -y python39-oci-sdk >/dev/null 2>&1 || python3 -m pip install --user -q oci
+fi
 sudo loginctl enable-linger "$USER"   # Benutzerdienste laufen auch ohne Anmeldung
 
 # ---------------------------------------------------------------- 2. JBang + Camel (Version festgeschrieben)
@@ -73,6 +79,7 @@ camel --version | tail -1
 step "3/9 Programmdateien"
 mkdir -p $B/{flows,disabled,events,logs,config,api,studio,nginx,kaoto,wallet,.installed} $U
 cp "$SRC/api/BeyondFlowApi.java" $B/api/
+mkdir -p $B/vault && cp "$SRC/vault/bf-vault.py" $B/vault/
 cp -r "$SRC/studio/." $B/studio/
 cp "$SRC/nginx/default.conf" $B/nginx/
 cp "$SRC/kaoto/patch_kamelets.py" $B/kaoto/
@@ -161,9 +168,17 @@ merge_props "$SRC/config/application.properties.template" $B/config/application.
 [ -n "$BF_SF_URL" ] && merge_props "$SRC/config/events.properties.template" $B/config/events.properties
 
 S=$B/config/secrets.env
-touch $S && chmod 600 $S
+if [ $VAULT = 1 ]; then
+  printf 'BF_VAULT_OCID=%s\n' "$BF_VAULT_OCID" > $B/config/vault.env
+  S=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/beyondflow/secrets.env
+  python3 $B/vault/bf-vault.py fetch --vault "$BF_VAULT_OCID" --prefix BF_ --out "$S"
+  [ -f $B/config/secrets.env ] && echo "HINWEIS: config/secrets.env liegt noch auf der Platte - nach erfolgreicher Uebertragung loeschen (install/vault-migrate.sh)"
+else
+  touch $S && chmod 600 $S
+fi
 secret() { # secret NAME "Frage" [optional]
   grep -q "^$1=." $S && return
+  if [ $VAULT = 1 ]; then [ -n "${3:-}" ] || echo "WARNUNG: Geheimnis $1 fehlt im OCI Vault (Secret-Name $1 anlegen)"; return; fi
   if [ ! -t 0 ]; then [ -n "${3:-}" ] && return; echo "Geheimnis $1 fehlt – install.sh einmal von Hand ausfuehren"; exit 1; fi
   read -rsp "$2${3:+ (Enter = ueberspringen)}: " v; echo
   [ -z "$v" ] && { [ -n "${3:-}" ] && return; echo "Pflichtwert"; exit 1; }
@@ -171,7 +186,7 @@ secret() { # secret NAME "Frage" [optional]
 }
 secret BF_CRM_DB_PASSWORD "Passwort des DB-Benutzers $BF_DB_USER"
 if [ -n "$BF_SNOW_INSTANCE" ]; then
-  grep -q '^BF_SNOW_USER=.' $S || [ ! -t 0 ] || { read -rp "ServiceNow-Integrationsbenutzer: " v; sed -i '/^BF_SNOW_USER=/d' $S; echo "BF_SNOW_USER=$v" >> $S; }
+  grep -q '^BF_SNOW_USER=.' $S || [ ! -t 0 ] || [ $VAULT = 1 ] || { read -rp "ServiceNow-Integrationsbenutzer: " v; sed -i '/^BF_SNOW_USER=/d' $S; echo "BF_SNOW_USER=$v" >> $S; }
   secret BF_SNOW_PASSWORD "ServiceNow-Passwort"
 fi
 if [ -n "$BF_SF_URL" ]; then
@@ -187,12 +202,25 @@ if [ -n "$BF_SAP_GATEWAY" ] && [ ! -f ~/.ssh/bf_sapctl ]; then
   echo "Steuerschluessel fuer das SAP-Gateway erzeugt: ~/.ssh/bf_sapctl.pub (beim Gateway-Installer einfuegen)"
 fi
 secret BF_AI_KEY "Anthropic API-Key fuer den KI-Assistenten" optional
-echo "secrets.env vollstaendig (Werte werden nicht angezeigt)"
+if [ $VAULT = 1 ]; then echo "Geheimnisse aus OCI Vault (nur im Arbeitsspeicher, Werte werden nicht angezeigt)"; else echo "secrets.env vollstaendig (Werte werden nicht angezeigt)"; fi
 
 # ---------------------------------------------------------------- 8. Dienste
 step "8/9 Dienste"
 for u in beyondflow-studio beyondflow-api beyondflow-runtime; do cp "$SRC/systemd/$u.service" $U/; done
 if [ -n "$BF_SF_URL" ]; then cp "$SRC/systemd/beyondflow-events.service" $U/; EVENTS=1; else EVENTS=0; fi
+if [ $VAULT = 1 ]; then
+  # Dienste lesen die Geheimnisse aus dem Arbeitsspeicher (%t), geladen von beyondflow-secrets aus OCI Vault
+  cp "$SRC/systemd/beyondflow-secrets.service" $U/
+  for u in beyondflow-runtime beyondflow-api $( [ $EVENTS = 1 ] && echo beyondflow-events ); do
+    sed -i -e 's#^EnvironmentFile=%h/beyondflow/config/secrets.env#EnvironmentFile=%t/beyondflow/secrets.env#' \
+           -e 's#^\[Unit\]#[Unit]\nRequires=beyondflow-secrets.service\nAfter=beyondflow-secrets.service#' $U/$u.service
+  done
+  sed -i 's#^\[Service\]#[Service]\nEnvironment=BF_SECRETS_FILE=%t/beyondflow/secrets.env#' $U/beyondflow-api.service
+  systemctl --user daemon-reload
+  systemctl --user enable beyondflow-secrets >/dev/null 2>&1
+  systemctl --user restart beyondflow-secrets
+  echo "Geheimnisse: OCI Vault (beyondflow-secrets)"
+fi
 systemctl --user daemon-reload
 systemctl --user enable beyondflow-studio beyondflow-api beyondflow-runtime >/dev/null 2>&1
 [ $EVENTS = 1 ] && systemctl --user enable beyondflow-events >/dev/null 2>&1
@@ -239,7 +267,8 @@ if [ -n "$BF_PUBLIC_HOST" ]; then
     sudo firewall-cmd --quiet --reload
     echo "Firewall: 443 -> 8443, 80 -> 8089 (zusaetzlich OCI Security List: 443 und 80 eingehend)"
   fi
-  grep -q '^BF_SNOW_HMAC=.' $S || { echo "BF_SNOW_HMAC=$(openssl rand -base64 32)" >> $S; echo "Signaturschluessel fuer ServiceNow-Ereignisse erzeugt (BF_SNOW_HMAC in secrets.env)"; }
+  if [ $VAULT = 1 ]; then grep -q '^BF_SNOW_HMAC=.' $S || echo "WARNUNG: BF_SNOW_HMAC fehlt im OCI Vault"
+  else grep -q '^BF_SNOW_HMAC=.' $S || { echo "BF_SNOW_HMAC=$(openssl rand -base64 32)" >> $S; echo "Signaturschluessel fuer ServiceNow-Ereignisse erzeugt (BF_SNOW_HMAC in secrets.env)"; }; fi
   cp "$SRC/systemd/beyondflow-edge.service" "$SRC/systemd/beyondflow-cert.service" "$SRC/systemd/beyondflow-cert.timer" $U/
   systemctl --user daemon-reload
   systemctl --user enable beyondflow-edge >/dev/null 2>&1

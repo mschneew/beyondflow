@@ -231,12 +231,40 @@ Am Ende müssen alle Prüfungen `OK` zeigen.
 BF_KAOTO_IMAGE=quay.io/kaotoio/kaoto-app@sha256:<digest>
 ```
 
+### 6.1 Geheimnisse in OCI Vault (empfohlen)
+
+Standard ist `~/beyondflow/config/secrets.env` (Rechte 600). Mit OCI Vault liegen die Passwörter **nicht mehr auf der Platte**: Beim Start lädt der Dienst `beyondflow-secrets` sie mit der Identität der VM (Instance Principal, kein Zugangsschlüssel auf der VM) in den Arbeitsspeicher (`/run/user/<uid>/beyondflow/secrets.env`). Auf der SAP-Gateway-VM macht `sap-gateway-secrets` dasselbe für das RFC-Passwort und das Gateway-Token.
+
+Kosten: keine im Rahmen von Always Free (Software-Schlüssel, bis 150 Secrets, kein „virtual private vault“).
+
+Einrichtung in der OCI-Konsole (einmalig):
+1. *Identity & Security → Vault → Create Vault*, Name `BeyondFlow`, **kein** virtual private vault.
+2. Im Vault *Create Key*: Name `BeyondFlow-Secrets`, Protection Mode **Software**, AES 256.
+3. *Domains → Default → Dynamic groups*: `BeyondFlow-VMs`, Regel `ALL {instance.compartment.id = '<Compartment-OCID>'}`.
+4. Richtlinie `BeyondFlow-Vault` (Compartment bzw. Tenancy anpassen):
+   ```
+   Allow dynamic-group 'Default'/'BeyondFlow-VMs' to read secret-family in tenancy where target.vault.id = '<Vault-OCID>'
+   Allow dynamic-group 'Default'/'BeyondFlow-VMs' to manage secret-family in tenancy where target.vault.id = '<Vault-OCID>'
+   Allow dynamic-group 'Default'/'BeyondFlow-VMs' to use keys in tenancy where target.key.id = '<Key-OCID>'
+   ```
+   Zeile 2 und 3 nur für die Übertragung; danach entfernen.
+
+Übertragen und umstellen:
+1. BeyondFlow-VM: `BF_VAULT_OCID=…` und `BF_VAULT_KEY_OCID=…` in `~/beyondflow.conf`, dann `bash ~/beyondflow-src/install/vault-migrate.sh`.
+   - Prüft den Zugriff, legt jedes `BF_*`-Geheimnis als Secret gleichen Namens an, vergleicht Vault und Datei, stellt die Dienste um und bietet an, `secrets.env` mit `shred` zu löschen.
+2. SAP-Gateway-VM: im Ordner mit den Gateway-Dateien `bash vault-migrate-sap.sh <Vault-OCID> <Key-OCID>`.
+   - Secret-Namen `SAPGW_SAP_PASSWD` und `SAPGW_GW_TOKEN`; danach werden beide Zeilen aus `/etc/sap-bridge.env` entfernt.
+3. Richtlinie auf die `read`-Zeile kürzen.
+
+Ein Geheimnis ändern oder rotieren: im Vault eine neue Version des Secrets anlegen, dann `systemctl --user restart beyondflow-secrets` (startet die abhängigen Dienste mit neu) bzw. auf der SAP-VM `sudo systemctl restart sap-gateway-secrets`.
+Ein neues Geheimnis (z. B. `BF_AI_KEY`) legt man direkt im Vault unter genau diesem Namen an.
+
 ### Dateien auf der VM
 
 | Pfad | Inhalt |
 |---|---|
 | `~/beyondflow.conf` | Kundenparameter (keine Geheimnisse) |
-| `~/beyondflow/config/secrets.env` | Geheimnisse, Rechte 600 |
+| `~/beyondflow/config/secrets.env` | Geheimnisse, Rechte 600 (entfällt mit OCI Vault, Abschnitt 6.1) |
 | `~/beyondflow/config/application.properties` | erzeugt; bestehende Werte werden bei Updates nicht überschrieben |
 | `~/beyondflow/flows`, `events`, `disabled` | aktive, Ereignis- und deaktivierte Flows |
 | `~/beyondflow/history.git` | Änderungsprotokoll aller Flows (Studio und Installer) |

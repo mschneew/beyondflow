@@ -674,7 +674,10 @@ public class BeyondFlowApi {
             } catch (IOException e) { /* fehlt */ }
             return m;
         }
-        static Map<String, String> secrets() { return readKv(BASE.resolve("config/secrets.env")); }
+        static Map<String, String> secrets() {   // Vault-Betrieb: BF_SECRETS_FILE zeigt auf die Datei im Arbeitsspeicher
+            String f = System.getenv("BF_SECRETS_FILE");
+            return readKv(f != null && !f.isBlank() ? Paths.get(f) : BASE.resolve("config/secrets.env"));
+        }
         static Map<String, String> props() { return readKv(BASE.resolve("config/application.properties")); }
 
         static List<Ev> parse(int maxLines) throws IOException {

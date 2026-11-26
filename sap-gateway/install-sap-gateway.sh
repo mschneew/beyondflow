@@ -33,9 +33,15 @@ ask SAP_ROUTER "SAProuter-String (leer, wenn keiner)"
 ask SAP_CLIENT "SAP Mandant"
 ask SAP_LANG   "Anmeldesprache (z.B. DE)"
 ask SAP_USER   "SAP RFC-Benutzer"
-ask SAP_PASSWD "Passwort des RFC-Benutzers" geheim
-if ! sudo grep -q '^GW_TOKEN=' $ENVF; then
-  printf 'GW_TOKEN=%s\nGW_BIND=%s\nGW_PORT=8095\n' "$(openssl rand -hex 24)" "$(hostname -I | awk '{print $1}')" | sudo tee -a $ENVF >/dev/null
+# Mit OCI Vault (vault-migrate-sap.sh) liegen SAP_PASSWD und GW_TOKEN nicht mehr in $ENVF
+if [ -f /etc/sap-bridge.vault ]; then
+  echo "Geheimnisse: OCI Vault (sap-gateway-secrets)"
+  sudo grep -q '^GW_BIND=' $ENVF || printf 'GW_BIND=%s\nGW_PORT=8095\n' "$(hostname -I | awk '{print $1}')" | sudo tee -a $ENVF >/dev/null
+else
+  ask SAP_PASSWD "Passwort des RFC-Benutzers" geheim
+  if ! sudo grep -q '^GW_TOKEN=' $ENVF; then
+    printf 'GW_TOKEN=%s\nGW_BIND=%s\nGW_PORT=8095\n' "$(openssl rand -hex 24)" "$(hostname -I | awk '{print $1}')" | sudo tee -a $ENVF >/dev/null
+  fi
 fi
 
 sudo tee /etc/systemd/system/sap-gateway.service >/dev/null <<UNIT
@@ -113,7 +119,8 @@ sudo systemctl restart sap-gateway
 sleep 6
 systemctl is-active sap-gateway
 BIND=$(sudo grep '^GW_BIND=' $ENVF | cut -d= -f2)
-echo "Test: $(curl -s -H "X-BF-Token: $(sudo grep '^GW_TOKEN=' $ENVF | cut -d= -f2)" http://$BIND:8095/health)"
+TOKF=$ENVF; [ -f /etc/sap-bridge.vault ] && TOKF=/run/sap-gateway/secrets.env
+echo "Test: $(curl -s -H "X-BF-Token: $(sudo grep '^GW_TOKEN=' $TOKF | cut -d= -f2)" http://$BIND:8095/health)"
 echo
 echo "Gateway-Adresse fuer beyondflow.conf (BF_SAP_GATEWAY): http://$BIND:8095"
 echo "Token fuer BeyondFlow (BF_SAP_TOKEN) anzeigen:  sudo grep GW_TOKEN $ENVF"

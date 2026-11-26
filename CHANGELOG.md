@@ -4,6 +4,16 @@ Versionsschema: `0.<Update-Nummer>`. Die installierte Version steht in `~/beyond
 Änderungen an Flows, die im Studio gespeichert werden, protokolliert BeyondFlow zusätzlich in `~/beyondflow/history.git`
 (`git --git-dir=~/beyondflow/history.git log --stat`).
 
+## 0.28 – 26.11.2026 – Geheimnisse in OCI Vault
+- Optionaler Vault-Betrieb: Passwörter, Schlüssel und Tokens liegen in **OCI Vault** statt in `secrets.env` bzw. `/etc/sap-bridge.env`.
+  - Anmeldung der VMs per Instance Principal (dynamische Gruppe), kein Zugangsschlüssel auf der Platte.
+  - Beim Start lädt `beyondflow-secrets` (BeyondFlow-VM) bzw. `sap-gateway-secrets` (SAP-VM) die Werte in den Arbeitsspeicher (`/run/…`); die Dienste hängen davon ab.
+  - Kostenlos im Rahmen von Always Free (Software-Schlüssel, bis 150 Secrets).
+- `vault/bf-vault.py`: `fetch`, `migrate`, `check`; gibt nie Werte aus, nur Namen und Anzahlen.
+- `install/vault-migrate.sh` und `sap-gateway/vault-migrate-sap.sh`: übertragen die vorhandenen Geheimnisse, gleichen Vault und Datei ab, stellen um und bieten das Löschen der Dateien an.
+- Installer: Vault-Betrieb erst nach erfolgreicher Übertragung (Marker `config/vault-active`); dann keine Abfragen und keine lokale Datei mehr. Ohne Vault bleibt alles wie bisher.
+- API liest die Geheimnisse aus `BF_SECRETS_FILE` (Vault-Betrieb) bzw. `config/secrets.env`.
+
 ## 0.27 – 25.11.2026 – Reiter „Kafka“
 - Studio: neuer Reiter **Kafka**.
   - **Dienste:** Zustand aller BeyondFlow-Dienste auf der VM (Kafka, Hauptlaufzeit, Ereignis-Laufzeit, Eingang, API, Studio, Update- und Zertifikats-Timer) mit „seit“, dazu das SAP-Gateway auf der SAP-VM.
